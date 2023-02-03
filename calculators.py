@@ -62,6 +62,11 @@ def find_main_directions(array, window: int, num_peaks: int):
         else:
             copy[angles[i]: angles[i] + window] = np.zeros_like(copy[angles[i]: angles[i] + window])
 
+        if i != 0:
+            if np.abs(angles[i] - angles[i - 1]) % 360 < 2 * window:
+                print("pop")
+                angles.pop()
+
     return angles
 
 
@@ -72,32 +77,24 @@ def calc_forward_toward(array, window):
     argmax_old = np.zeros(SIZE, dtype=int)
     for i in range(SIZE):
         argmax_old[i] = np.argmax(copy)
-        copy[argmax_old[i] - window: argmax_old[i] + window] = np.zeros(2 * window)
+        copy[argmax_old[i] - 5 * window: argmax_old[i] + 5 * window] = np.zeros(10 * window)
 
     for t in range(1, array.shape[0]):
         copy = np.copy(array[t])
         argmax_new = np.zeros(SIZE, dtype=int)
         for i in range(SIZE):
-            argmax_new[i] = np.argmax(copy[max(0, argmax_old[i] - window): min(argmax_old[i] + window, len(copy))])
+            argmax_new[i] = np.argmax(
+                copy[max(0, argmax_old[i] - window): min(argmax_old[i] + window, len(copy))]) - window
 
-            if argmax_new[i] - window < 0:
-                copy[argmax_new[i] - window: -1] = np.zeros_like(copy[argmax_new[i] - window: -1])
-                copy[0: argmax_new[i]] = np.zeros_like(copy[0: argmax_new[i]])
+            if argmax_new[i] >= 0:
+                toward[t] += 1
             else:
-                # print(angles[i] - window, angles[i])
-                copy[argmax_new[i] - window: argmax_new[i]] = np.zeros_like(copy[argmax_new[i] - window: argmax_new[i]])
-            if argmax_new[i] + window > copy.shape[0]:
-                copy[argmax_new[i]: -1] = np.zeros_like(copy[argmax_new[i]: -1])
-                copy[0: argmax_new[i] + window - copy.shape[0]] = np.zeros_like(
-                    copy[0: argmax_new[i] + window - copy.shape[0]])
-            else:
-                copy[argmax_new[i]: argmax_new[i] + window] = np.zeros_like(copy[argmax_new[i]: argmax_new[i] + window])
+                toward[t] -= 1
 
-            # copy[argmax_new[i] - window: argmax_new[i] + window] = np.zeros(2 * window)
-        if np.sum(np.sign(argmax_new - argmax_old)) > 0:
-            toward[t] = 1
-        argmax_old = argmax_new
+        for i in range(SIZE):
+            argmax_old[i] = np.argmax(copy)
+            copy[argmax_old[i] - 5 * window: argmax_old[i] + 5 * window] = np.zeros(10 * window)
 
     print(toward)
 
-    return np.sum(toward) >= 0.5 * toward.shape[0]
+    return np.sum(toward) >= 0

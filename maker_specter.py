@@ -30,10 +30,11 @@ full_time = 64
 PERIOD_RADAR = 2.5
 resolution = 4096
 TRASHHOLD = 0.5
+SIZE_SQUARE_PIX = 384
 
 an_res = []
 
-mask_circle = make_radon_circle(384)
+mask_circle = make_radon_circle(SIZE_SQUARE_PIX)
 
 for name in stations:
     data_nc = nc.Dataset(name)  # имя файла с данными
@@ -51,9 +52,9 @@ for name in stations:
     if max_time < full_time // 2:
         break
 
-    back_cartesian_3d_four = np.ndarray(shape=(full_time, 384, 384), dtype=float)
-    # back_cartesian_3d_four_one = np.ndarray(shape=(384, 384), dtype=float)
-    radon_array = np.ndarray(shape=(full_time, 384, 180), dtype=float)
+    back_cartesian_3d_four = np.ndarray(shape=(full_time, SIZE_SQUARE_PIX, SIZE_SQUARE_PIX), dtype=float)
+    # back_cartesian_3d_four_one = np.ndarray(shape=(SIZE_SQUARE_PIX, SIZE_SQUARE_PIX), dtype=float)
+    radon_array = np.ndarray(shape=(full_time, SIZE_SQUARE_PIX, 180), dtype=float)
     radon_max = np.ndarray(shape=(full_time,), dtype=float)
 
     time0 = time.time()
@@ -64,7 +65,7 @@ for name in stations:
             print("done " + str(round(t / full_time * 100, 1)) + "%, estimated time " + str(
                 round((full_time / t - 1) * (time.time() - time0), 1)))
 
-        area = Area(720, 720, 1360, 270, 0)
+        area = Area(720, 720, 1360, int(data_nc.variables["giro_radar"][t]), -int(data_nc.variables["giro_radar"][t]))
 
         area_mask_div, area_mask_mod, min_max = make_area_mask(area, data_nc.variables["rad_radar"][-1],
                                                                data_nc.variables["rad_radar"].shape[0],
@@ -80,8 +81,7 @@ for name in stations:
         back_cartesian_3d_four[t][back_cartesian_3d_four[t] != 0.] = 1.
 
         radon_array[t] = radon(mask_circle * back_cartesian_3d_four[t])
-
-        plt.plot(np.std(radon_array[t], axis=0), color='blue')
+        # radon_array[t] = np.roll(radon_array[t], 270, axis=-1)  # int(data_nc.variables["giro_radar"][t])
 
         # tmp_1 = ndimage.sobel(back_cartesian_3d_four_one, axis=1, mode='nearest')
         # tmp_0 = ndimage.sobel(back_cartesian_3d_four_one, axis=0, mode='nearest')
@@ -89,44 +89,36 @@ for name in stations:
 
     # freq, res_s = ss.welch(back_cartesian_3d_four, detrend='linear', axis=0, return_onesided=False)
 
-    # make_anim_back(back_cartesian_3d_four, full_time, str("nosobel_trash05" + name[-7:-3]))
-    # make_anim_radon(radon_array, full_time, str("radon_trash05" + name[-7:-3]))
+    # make_anim_back(back_cartesian_3d_four, full_time, str("back1" + name[-7:-3]))
+    # make_anim_radon(radon_array, full_time, str("radon1" + name[-7:-3]))
 
     men = np.mean(np.std(radon_array, axis=1), axis=0)
+    angles = find_main_directions(men, 15, 2)
 
-    angles = find_main_directions(men, 20, 2)
+    print(angles)
 
-    plt.plot(men, color='red')
-
-    for an in angles:
-        plt.plot([an, an], [np.min(men), np.max(men)], color='green')
-        flag = calc_forward_toward(radon_array[:, :, an], 3)
-
-        if not flag:
+    for i in range(len(angles)):
+        flag = calc_forward_toward(radon_array[:, :, angles[i]], 3)
+        if flag:
             print("toward")
-            an -= 90
+            angles[i] += 180
+
         else:
             print("forward")
-            an += 90
 
-        if an > 360:
-            an -= 360
-        if an < 0:
-            an += 360
+        if angles[i] > 360:
+            angles[i] -= 360
+        if angles[i] < 0:
+            angles[i] += 360
 
-        print(an)
-        an_res.append(an)
+    print(angles)
 
-    log_file.loc[log_file["name"] == int(name[-7:-3]), ["sog"]] = data_nc.variables["sog_radar"][0]
-    log_file.loc[log_file["name"] == int(name[-7:-3]), ["cog"]] = data_nc.variables["cog_radar"][0]
-    log_file.loc[log_file["name"] == int(name[-7:-3]), ["giro"]] = data_nc.variables["giro_radar"][0]
-    log_file.loc[log_file["name"] == int(name[-7:-3]), ["an"]] = an_res[-2]
-    log_file.loc[log_file["name"] == int(name[-7:-3]), ["an2"]] = an_res[-1]
-    # log_file.loc[log_file["name"] == int(name[-7:-3]), ["angle_radon_nosob2"]] = np.median(radon_max)
-    ## # #
+    log_file.loc[log_file["name"] == int(name[-7:-3]), ["an"]] = angles[0]
+
+    if len(angles) > 1:
+        log_file.loc[log_file["name"] == int(name[-7:-3]), ["an2"]] = angles[1]
+
     log_file.to_csv("sheets/stations_data10.csv", index=False)
 
     print("station " + name[-7:-3] + " processed and saved")
-    # print(np.median(np.argmax(std, axis=1)))
-
     data_nc.close()

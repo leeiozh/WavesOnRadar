@@ -27,7 +27,7 @@ def make_anim_radon(array, frames, name):
 
     # axs.set_xlabel(r"Угол $\theta$, град")
     # axs.set_ylabel(r"Расстояние $\rho$, м")
-    animation.save(str(name) + ".gif", writer=writer)
+    animation.save("gifs/" + str(name) + ".gif", writer=writer)
 
 
 def make_anim_back(array, frames, name):
@@ -54,24 +54,25 @@ def make_shot(array, name):
     plt.savefig("pics/" + str(name) + ".png", dpi=300)
 
 
-def make_anim_plot(array, name, frames):
+def make_anim_plot(array, name):
     fig, axs = plt.subplots(1, 1, figsize=(7, 7), facecolor='w', edgecolor='k')
 
-    x = np.arange(0, 180)
+    x = np.arange(0, 384)
     line, = axs.plot(x, array[0])
-    axs.set_xlabel(r"Угол $\theta$, град")
-    axs.set_ylabel(r"Расстояние $\rho$, м")
+    #axs.set_xlabel(r"Угол $\theta$, град")
+    #axs.set_ylabel(r"Расстояние $\rho$, м")
     axs.grid()
 
     def anim(i):
         # print(i)
+        axs.clear()
         axs.plot(x, array[i])
         # axs.set_xlabel(r'Угол \theta, град')
         # axs.set_ylabel(r'\int R(\theta, s)ds / \int ds')
-        # axs.text(100, 200, str(i), color='black', bbox=dict(boxstyle='round', facecolor='white'))
+        axs.text(100, 200, str(i), color='black', bbox=dict(boxstyle='round', facecolor='white'))
         return line,
 
-    animation = FuncAnimation(fig, anim, frames=frames, interval=10000, blit=True)
-    writer = PillowWriter(fps=2.5)
+    animation = FuncAnimation(fig, anim, frames=array.shape[0], interval=10000, blit=True)
+    writer = PillowWriter(fps=1)
 
-    animation.save(str(name) + ".gif", writer=writer)
+    animation.save("gifs/" + str(name) + ".gif", writer=writer)
