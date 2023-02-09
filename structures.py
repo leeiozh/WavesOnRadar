@@ -1,15 +1,21 @@
+import math
+
 import numpy as np
+from numba import njit, int32, float64
+from numba.experimental import jitclass
+
+area_spec = [('width', float64),
+             ('height', float64),
+             ('distance', float64),
+             ('azimuth', float64),
+             ('orientation', float64)]
 
 
+@jitclass(area_spec, )
 class Area:
     """
     класс исследуемого прямоугольника
     """
-    width: float  # ширина прямоугольника м
-    height: float  # высота прямоугольника м
-    distance: float  # расстояние от радара до центра прямоугольника м
-    azimuth: float  # угол между осью у и направлением на центр прямоугольника (по часовой) рад
-    orientation: float  # угол между осью у и направлением на середину верхнего ребра прямоугольника (по часовой) рад
 
     def __init__(self, width: float, height: float, distance: float, azimuth: float, orientation: float):
         """
@@ -51,11 +57,13 @@ class Area:
         angle_plus = beta + self.orientation
         lu_rd_tmp = 0.5 * diag * np.array([-np.cos(angle_plus), np.sin(angle_plus)])
         ru_ld_tmp = 0.5 * diag * np.array([np.cos(angle_min), np.sin(angle_min)])
-        lu = center + lu_rd_tmp
-        ru = center + ru_ld_tmp
-        ld = center - ru_ld_tmp
-        rd = center - lu_rd_tmp
-        return np.array([ru, rd, ld, lu])
+        res = np.zeros((4, 2))
+        res[3] = center + lu_rd_tmp
+        res[0] = center + ru_ld_tmp
+        res[2] = center - ru_ld_tmp
+        res[1] = center - lu_rd_tmp
+
+        return res
 
     def get_coords_vertex_map(self):
         """
@@ -74,25 +82,22 @@ class Area:
         return center - np.array(self.width * np.cos(self.orientation), self.height * np.sin(self.orientation)) / 2
 
 
-def make_area_mask(area, rad_limit, rad_mesh_shape, theta_mesh_shape, resolution):
+@njit
+def make_area_mask(area: Area, rad_limit: int, rad_mesh_shape: int, theta_mesh_shape: int, resolution: int):
     """
     создание "матрицы" перехода от полярных к декартовым для указанной области (вычисляется один раз)
     """
     min_max = np.array([4096, 0])
-    r_lim = rad_limit
-    w = area.width
-    h = area.height  # в метрах
-    w = min(w, r_lim)
-    h = min(h, r_lim)
-    res_x_size = round(w / r_lim * resolution)  # размер массива результатов по х
-    res_y_size = round(h / r_lim * resolution)  # размер массива результатов по у
+
+    res_x_size = math.floor(area.width / rad_limit * resolution)  # размер массива результатов по х
+    res_y_size = math.floor(area.height / rad_limit * resolution)  # размер массива результатов по у
 
     coords_vertex = area.get_coords_vertex()
     coords_vertex /= rad_limit
     coords_vertex *= rad_mesh_shape  # координаты вершин области в единицах исходного массива
 
-    res_mask_div = np.ndarray(shape=(2, res_x_size, res_y_size), dtype=int)
-    res_mask_mod = np.ndarray(shape=(2, res_x_size, res_y_size), dtype=float)
+    res_mask_div = np.zeros(shape=(2, res_x_size, res_y_size), dtype=int32)
+    res_mask_mod = np.zeros(shape=(2, res_x_size, res_y_size), dtype=float64)
 
     for i in range(res_x_size):
         x = np.linspace(coords_vertex[2, 0] + i / res_x_size * (coords_vertex[1, 0] - coords_vertex[2, 0]),
