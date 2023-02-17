@@ -5,9 +5,9 @@ import scipy.signal as ss
 import scipy.fft as sf
 import pandas as pd
 from skimage.transform import radon
-from structures import *
-from calculators import *
-from drawers import *
+from src.structures import *
+from src.calculators import *
+from src.drawers import *
 
 ask = input("manually enter stations or just enter for auto process all stations >> ")
 
@@ -37,7 +37,7 @@ mask_circle = make_radon_circle(SIZE_SQUARE_PIX)
 
 for name in stations:
     data_nc = nc.Dataset(name)  # имя файла с данными
-    log_file = pd.read_csv("/storage/kubrick/ezhova/WavesOnRadar/sheets/stations_data12.csv", delimiter=",")
+    log_file = pd.read_csv("sheets/stations_data12.csv", delimiter=",")
 
     print("station " + name[-17:-3] + " started proccess...")
 
@@ -152,7 +152,7 @@ for name in stations:
     plt.plot(np.linspace(0, 1 / PERIOD_RADAR, radar_szz.shape[0]), radar_szz, label="radar")
     plt.legend()
     plt.grid()
-    plt.savefig("/storage/kubrick/ezhova/WavesOnRadar/pics/freq_" + str(name[-17:-3]) + ".png")
+    plt.savefig("pics/freq_" + str(name[-17:-3]) + ".png")
     plt.show()
 
     log_file.loc[log_file["name"] == name[-17:-3], ["radar_an"]] = angles[0]
@@ -163,7 +163,7 @@ for name in stations:
     if len(angles) > 1:
         log_file.loc[log_file["name"] == name[-17:-3], ["radar_an2"]] = angles[1]
 
-    log_file.to_csv("/storage/kubrick/ezhova/WavesOnRadar/sheets/stations_data12.csv", index=False)
+    log_file.to_csv("sheets/stations_data12.csv", index=False)
 
     print("station " + name[-17:-3] + " processed and saved")
     data_nc.close()
