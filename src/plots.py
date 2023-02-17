@@ -15,9 +15,11 @@ axs.get_xaxis().set_tick_params(which='both', direction='in')
 axs.get_yaxis().set_tick_params(which='both', direction='in')
 plt.rc('axes', axisbelow=True)
 
-df = pd.read_csv("/storage/kubrick/ezhova/WavesOnRadar/sheets/stations_data11.csv", delimiter=",")
+df = pd.read_csv("/storage/kubrick/ezhova/WavesOnRadar/sheets/stations_data13.csv", delimiter=",")
 
-popt, pcov = curve_fit(func, df["radar_m0"][:-12], df["buoy_swh"][:-12])
+IND_AI58 = -15
+
+popt, pcov = curve_fit(func, df["radar_m0"][:-12 + IND_AI58], df["buoy_swh"][:-12 + IND_AI58])
 
 # popt = [1.02998521, 12.59410359]
 
@@ -43,8 +45,9 @@ axs.set_ylabel("SWH by RADAR, s")
 axs.set_xlim(0.5, 4.5)
 axs.set_ylim(0.5, 4.5)
 
-# axs.scatter(df["buoy_ang"], df["radar_an"], edgecolor='black', s=70, label='clear data')
-# axs.scatter(df["buoy_ang"][-11:-1], df["radar_an"][-11:-1], color='orange', edgecolor='black', s=70, label='noisy data')
+# axs.scatter(df["buoy_ang"][: + IND_AI58], df["radar_an"][: + IND_AI58], edgecolor='black', s=70, label='clear data')
+# axs.scatter(df["buoy_ang"][-11 + IND_AI58:-6 + IND_AI58], df["radar_an"][-11 + IND_AI58:-6 + IND_AI58], color='orange',
+#             edgecolor='black', s=70, label='noisy data')
 # axs.legend()
 # axs.plot([0, 360], [0, 360], color='black')
 #
@@ -53,23 +56,24 @@ axs.set_ylim(0.5, 4.5)
 # axs.set_xlim(-20, 380)
 # axs.set_ylim(-20, 380)
 # axs.text(20, 270, 'corr =' + str(
-#     round(np.corrcoef(df["buoy_ang"][:-12], df["radar_an"][:-12])[0, 1], 2)))
+#     round(np.corrcoef(df["buoy_ang"][:-12 + IND_AI58], df["radar_an"][:-12 + IND_AI58])[0, 1], 2)))
 # axs.text(20, 250, 'rmse =' + str(
-#     round(np.linalg.norm(df["buoy_ang"][:-12] - df["radar_an"][:-12]) / np.sqrt(df[:-12].shape[0]), 2)))
+#    round(np.linalg.norm(df["buoy_ang"][:-12 + IND_AI58] - df["radar_an"][:-12 + IND_AI58]) / np.sqrt(
+#        df[:-12 + IND_AI58].shape[0]), 2)))
 
 # axs.scatter(df["buoy_per"], df["radar_per"], edgecolor='black', s=70, label='clear data')
 # axs.scatter(df["buoy_per"] * (1 - mask), df["radar_per"] * (1 - mask), edgecolor='black', s=70, label='noisy data')
 # axs.legend()
-# axs.plot([5, 16], [5, 16], color='black')
+# axs.plot([4, 16], [4, 16], color='black')
 #
 # axs.set_xlabel("Period by BUOY, s")
 # axs.set_ylabel("Period by RADAR, s")
-# axs.set_xlim(5, 16)
-# axs.set_ylim(5, 16)
+# axs.set_xlim(4, 16)
+# axs.set_ylim(4, 16)
 # axs.text(12, 6, 'corr =' + str(round(np.corrcoef(df["buoy_per"][:-12], df["radar_per"][:-12])[0, 1], 2)))
-# axs.text(12, 7, 'rmse =' + str(round(
-#     np.linalg.norm(df["buoy_per"][:-12] - df["radar_per"][:-12]) / np.sqrt(df["radar_per"][:-12].shape[0]), 2)))
+# axs.text(12, 6.7, 'rmse =' + str(round(
+#    np.linalg.norm(df["buoy_per"][:-12] - df["radar_per"][:-12]) / np.sqrt(df["radar_per"][:-12].shape[0]), 2)))
 
 axs.grid(linestyle=':')
-plt.savefig('/storage/kubrick/ezhova/WavesOnRadar/plots/swh.png', bbox_inches='tight', dpi=1000)
+plt.savefig('/storage/kubrick/ezhova/WavesOnRadar/plots/direction2.png', bbox_inches='tight', dpi=1000)
 plt.show()

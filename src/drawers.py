@@ -3,7 +3,7 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 import matplotlib.pyplot as plt
 
 
-def make_anim_radon(array, frames, name):
+def make_anim_radon(array, name):
     def anim(i):
         # print(i)
         im.set_array(array[i])
@@ -19,7 +19,7 @@ def make_anim_radon(array, frames, name):
                     interpolation='None')  # extent=[0, 180, 0, 720], aspect=0.25,
     # line, = axs.plot(np.arange(180), 10 * np.std(array[0], axis=0) - 700, color='black')
     # line2, = axs.plot(50 + 2 * np.std(array[0], axis=1), np.linspace(-360, 360, 384), color='white')
-    animation = FuncAnimation(fig, anim, frames=frames, interval=100000, blit=True)
+    animation = FuncAnimation(fig, anim, frames=array.shape[0], interval=100000, blit=True)
     writer = PillowWriter(fps=1)
 
     # axs.set_xlabel(r"Угол $\theta$, град")
@@ -42,7 +42,7 @@ def make_anim_back(array, name):
 
     # axs.set_xlabel(r"Угол $\theta$, град")
     # axs.set_ylabel(r"Расстояние $\rho$, м")
-    animation.save("/storage/kubrick/ezhova/WavesOnRadar/gifs/" + str(name) + ".gif", writer=writer)
+    animation.save("gifs/" + str(name) + ".gif", writer=writer)
 
 
 def make_anim_four(array, name):
@@ -62,12 +62,13 @@ def make_anim_four(array, name):
 
     # axs.set_xlabel(r"Угол $\theta$, град")
     # axs.set_ylabel(r"Расстояние $\rho$, м")
-    animation.save("/storage/kubrick/ezhova/WavesOnRadar/gifs/" + str(name) + ".gif", writer=writer)
+    animation.save("gifs/" + str(name) + ".gif", writer=writer)
 
 
 def make_shot(array, name):
     fig, axs = plt.subplots(1, 1, figsize=(7, 7), facecolor='w', edgecolor='k')
-    axs.imshow(array, origin='lower', cmap='Greys', interpolation='None')
+    im = axs.imshow(array, origin='lower', cmap='Greys', interpolation='None')
+    plt.colorbar(im)
     plt.savefig("pics/" + str(name) + ".png", dpi=300)
 
 
@@ -92,4 +93,4 @@ def make_anim_plot(array, name):
     animation = FuncAnimation(fig, anim, frames=array.shape[0], interval=10000, blit=True)
     writer = PillowWriter(fps=1)
 
-    animation.save("/storage/kubrick/ezhova/WavesOnRadar/gifs/" + str(name) + ".gif", writer=writer)
+    animation.save("gifs/" + str(name) + ".gif", writer=writer)
