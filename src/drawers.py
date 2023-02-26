@@ -2,6 +2,7 @@ import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
 import matplotlib.pyplot as plt
 
+PATH = '/storage/kubrick/ezhova/WavesOnRadar/'
 
 def make_anim_radon(array, name):
     def anim(i):
@@ -24,7 +25,7 @@ def make_anim_radon(array, name):
 
     # axs.set_xlabel(r"Угол $\theta$, град")
     # axs.set_ylabel(r"Расстояние $\rho$, м")
-    animation.save("gifs/" + str(name) + ".gif", writer=writer)
+    animation.save(PATH + "gifs/" + str(name) + ".gif", writer=writer)
 
 
 def make_anim_back(array, name):
@@ -42,7 +43,7 @@ def make_anim_back(array, name):
 
     # axs.set_xlabel(r"Угол $\theta$, град")
     # axs.set_ylabel(r"Расстояние $\rho$, м")
-    animation.save("gifs/" + str(name) + ".gif", writer=writer)
+    animation.save(PATH + "gifs/" + str(name) + ".gif", writer=writer)
 
 
 def make_anim_four(array, name):
@@ -62,14 +63,14 @@ def make_anim_four(array, name):
 
     # axs.set_xlabel(r"Угол $\theta$, град")
     # axs.set_ylabel(r"Расстояние $\rho$, м")
-    animation.save("gifs/" + str(name) + ".gif", writer=writer)
+    animation.save(PATH + "gifs/" + str(name) + ".gif", writer=writer)
 
 
 def make_shot(array, name):
     fig, axs = plt.subplots(1, 1, figsize=(7, 7), facecolor='w', edgecolor='k')
     im = axs.imshow(array, origin='lower', cmap='Greys', interpolation='None')
     plt.colorbar(im)
-    plt.savefig("pics/" + str(name) + ".png", dpi=300)
+    plt.savefig(PATH + "pics/" + str(name) + ".png", dpi=300)
 
 
 def make_anim_plot(array, name):
@@ -93,4 +94,4 @@ def make_anim_plot(array, name):
     animation = FuncAnimation(fig, anim, frames=array.shape[0], interval=10000, blit=True)
     writer = PillowWriter(fps=1)
 
-    animation.save("gifs/" + str(name) + ".gif", writer=writer)
+    animation.save(PATH + "gifs/" + str(name) + ".gif", writer=writer)

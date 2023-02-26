@@ -1,11 +1,8 @@
-import time
 import glob
 import netCDF4 as nc
 import scipy.signal as ss
-import scipy.fft as sf
 import pandas as pd
-from skimage.transform import radon
-from src.structures import *
+
 from src.calculators import *
 from src.drawers import *
 
@@ -20,150 +17,132 @@ else:
 
 stations.sort()
 
-cut_ind = 32
-time_radon = 64
-time_fourier = 256
-PERIOD_RADAR = 2.45
-WIDTH_DISPERSION = 5
-resolution = 4096
-TRASHHOLD = 0.5
-SIZE_SQUARE_PIX = 384
-k_min = 2 * np.pi / 720
-k_max = 2 * np.pi / 720 * cut_ind
+t_rad = 128  # количество оборотов, учитываемое преобразованием Радона для определения направления
+t_four = 720  # количество оборотов, учитываемое преобразованием Фурье
+PERIOD_RADAR = 2.5  # период оборота радара
+WIDTH_DISPERSION = 7  # ширина в пикселах вырезаемой области Омега из дисперсионного соотношения
+cut_ind = 32  # отсечка массива после преобразования Фурье
+resolution = 4096  # разрешение картинки по обеим осям (4096 -- максимальное, его лучше не менять)
+THRESHOLD = 0.5  # пороговое значение для фильтра к преобразованию Радона
+SQUARE_SIZE = 720  # размер вырезаемого квадрата в метрах
+SIZE_SQUARE_PIX = int(SQUARE_SIZE / 1.875)  # размер вырезаемого квадрата в пикселах
+k_min = 2 * np.pi / SQUARE_SIZE  # минимальное волновое число
+k_max = 2 * np.pi / SQUARE_SIZE * cut_ind  # максимальное волновое число
 
-an_res = []
+an_res = []  # list of obtained directions
 
-mask_circle = make_radon_circle(SIZE_SQUARE_PIX)
+mask_circle = make_circle(SIZE_SQUARE_PIX)  # mask of circle for Radon transform
 
 for name in stations:
-    data_nc = nc.Dataset(name)  # имя файла с данными
-    log_file = pd.read_csv("sheets/stations_data12.csv", delimiter=",")
+    data_nc = nc.Dataset(name)  # file data name
+    output_file = pd.read_csv(PATH + "sheets/stations_data12.csv", delimiter=",")  # file for output data
 
     print("station " + name[-17:-3] + " started proccess...")
 
-    start_ind = 0
-    max_time = data_nc.variables["bsktr_radar"].shape[0]
+    # start time in radar data respectfully buoy
+    st_ix = np.argmax(np.array(data_nc.variables["time_radar"]) - data_nc.variables["time_buoy"][0] >= 0)[0]
 
-    if max_time < time_fourier:
+    max_time = data_nc.variables["bsktr_radar"].shape[0] - st_ix  # full recorded number of turns
+
+    if max_time < t_four:
         print("!!!!!!!!!!!!!!!!!")
         print(name, "is short, max_time", max_time)
         print("!!!!!!!!!!!!!!!!!")
 
-    if max_time < time_fourier // 2:
+    if max_time < t_four // 2:  # we can apply mirror not less than half data
         break
 
-    back_cartesian_3d_rad = np.ndarray(shape=(time_fourier, SIZE_SQUARE_PIX, SIZE_SQUARE_PIX), dtype=float)
-    # back_cartesian_3d_four_one = np.ndarray(shape=(SIZE_SQUARE_PIX, SIZE_SQUARE_PIX), dtype=float)
-    radon_array = np.ndarray(shape=(time_radon, SIZE_SQUARE_PIX, 180), dtype=float)
-    radon_max = np.ndarray(shape=(time_radon,), dtype=float)
+    # try cut data from azimuth with maximum dispersion
+    back_cart_3d_rad, ang_std = calc_back(data_nc, t_rad, st_ix, max_time, resolution, SQUARE_SIZE, SIZE_SQUARE_PIX, 0,
+                                          0, True)
 
-    time0 = time.time()
+    print("back for radon done")
 
-    for t in range(time_radon):
+    print("ang_std >> ", ang_std)
 
-        if t % 8 == 0 and t != 0:
-            print("radon done " + str(round(t / time_radon * 100, 1)) + "%, estimated time " + str(
-                round((time_radon / t - 1) * (time.time() - time0), 1)))
+    # make_anim_back(back_cart_3d_rad, "back_ " + name[-17:-3])
 
-        area = Area(720, 720, 1360, 270, -270)  # int(data_nc.variables["giro_radar"][t])
+    radon_array = thresh_radon(back_cart_3d_rad, THRESHOLD, mask_circle)
+    print("radon done")
 
-        area_mask_div, area_mask_mod, min_max = make_area_mask(area, data_nc.variables["rad_radar"][-1],
-                                                               data_nc.variables["rad_radar"].shape[0],
-                                                               data_nc.variables["theta_radar"].shape[0], resolution)
+    # make_anim_radon(radon_array, "radon_" + name[-17:-3])
 
-        if t < max_time:
-            back_polar = np.transpose(data_nc.variables["bsktr_radar"][t + start_ind])
+    angles, direct = find_main_directions(radon_array, 2, 15)
+    print("obtained direction >> ", angles)
+    print("obtained directs >> ", direct)
+
+    if np.abs(direct[0]) < 0.1:  # if data so noisy that we can't determine directions
+        # try to cut data from 270 azimuth
+        back_cart_3d_rad, ang_std = calc_back(data_nc, t_rad, st_ix, max_time, resolution, SQUARE_SIZE, SIZE_SQUARE_PIX,
+                                              1, 0, True)
+        radon_array = thresh_radon(back_cart_3d_rad, THRESHOLD, mask_circle)
+        angles2, direct2 = find_main_directions(radon_array, 1, 10)
+        print("bad angles, new directions >> ", angles2, direct2)
+        if np.abs(direct2[0]) > np.abs(direct[0]):
+            angles = angles2
+            direct = direct2
+
+    direct_std = calc_autocorr(radon_array[:, :, ang_std % 180])
+    print("direct std", direct_std)
+    if direct_std < 0:
+        if ang_std > 180:
+            ang_std -= 180
         else:
-            back_polar = np.transpose(data_nc.variables["bsktr_radar"][- t - start_ind + 2 * max_time - 1])
+            ang_std += 180
 
-        back_cartesian_3d_rad[t] = speed_bilinear_interpol(back_polar, area_mask_div, area_mask_mod)
-        back_cartesian_3d_rad[t][back_cartesian_3d_rad[t] < 2 * TRASHHOLD * np.mean(back_cartesian_3d_rad[t])] = 0.
-        back_cartesian_3d_rad[t][back_cartesian_3d_rad[t] != 0.] = 1.
+    # if the direction obtained by Radon is very different from the largest standard deviation,
+    # we give priority to the standard deviation
+    if np.abs(direct_std) > np.abs(direct[0]) and np.abs(ang_std - angles[0]) > 60:
+        angles[0] = ang_std
 
-        radon_array[t] = radon(mask_circle * back_cartesian_3d_rad[t])
+    print("final", angles[0])
 
-    one = True
-    angles = find_main_directions(radon_array, 1, 15, 5, one)
+    for an in angles:  # loop in every obtained direction (so we can separate different wave systems)
 
-    if angles == 666 and one:
-        for t in range(time_radon):
-
-            if t % 8 == 0 and t != 0:
-                print("radon done " + str(round(t / time_radon * 100, 1)) + "%, estimated time " + str(
-                    round((time_radon / t - 1) * (time.time() - time0), 1)))
-
-            area = Area(720, 720, 1360, 180, -180)  # int(data_nc.variables["giro_radar"][t])
-
-            area_mask_div, area_mask_mod, min_max = make_area_mask(area, data_nc.variables["rad_radar"][-1],
-                                                                   data_nc.variables["rad_radar"].shape[0],
-                                                                   data_nc.variables["theta_radar"].shape[0],
-                                                                   resolution)
-
-            if t < max_time:
-                back_polar = np.transpose(data_nc.variables["bsktr_radar"][t + start_ind])
-            else:
-                back_polar = np.transpose(data_nc.variables["bsktr_radar"][- t - start_ind + 2 * max_time - 1])
-
-            back_cartesian_3d_rad[t] = speed_bilinear_interpol(back_polar, area_mask_div, area_mask_mod)
-            back_cartesian_3d_rad[t][back_cartesian_3d_rad[t] < 2 * TRASHHOLD * np.mean(back_cartesian_3d_rad[t])] = 0.
-            back_cartesian_3d_rad[t][back_cartesian_3d_rad[t] != 0.] = 1.
-
-            radon_array[t] = radon(mask_circle * back_cartesian_3d_rad[t])
-            one = False
-        angles = find_main_directions(radon_array, 1, 15, 5, one)
-
-    print("radon done, obtained directions >> ", angles)
-
-    for an in angles:
-
-        back_cartesian_3d = np.ndarray(shape=(time_fourier, cut_ind, cut_ind), dtype=complex)
-        time0 = time.time()
-
-        for t in range(time_fourier):
-            if t % 32 == 0 and t != 0:
-                print("fourier done " + str(round(t / time_fourier * 100, 1)) + "%, estimated time " + str(
-                    round((time_fourier / t - 1) * (time.time() - time0), 1)))
-
-            area = Area(720, 720, 1360, 270, (-270 - an) % 360)  # int(data_nc.variables["giro_radar"][t])
-
-            area_mask_div, area_mask_mod, min_max = make_area_mask(area, data_nc.variables["rad_radar"][-1],
-                                                                   data_nc.variables["rad_radar"].shape[0],
-                                                                   data_nc.variables["theta_radar"].shape[0],
-                                                                   resolution)
-            if t < max_time:
-                back_polar = np.transpose(data_nc.variables["bsktr_radar"][t])
-            else:
-                back_polar = np.transpose(data_nc.variables["bsktr_radar"][- t + 2 * max_time - 1])
-
-            back_cartesian_3d[t] = sf.fft2(speed_bilinear_interpol(back_polar, area_mask_div, area_mask_mod))[:cut_ind,
-                                   :cut_ind]
-
-        f, res_s = ss.welch(back_cartesian_3d, detrend='linear', axis=0, return_onesided=False)
+        # but now we compare only main parameters (because buoy)
 
         if an == angles[0]:
-            m0, m1, radar_szz = process_fourier(name, res_s,
-                                                np.median(data_nc.variables["sog_radar"][
-                                                          start_ind: start_ind + time_fourier]),
-                                                an + np.median(
-                                                    data_nc.variables["giro_radar"][
-                                                    start_ind: start_ind + time_fourier]), WIDTH_DISPERSION,
-                                                PERIOD_RADAR, k_min, k_max)
+            back_cartesian_four, ang_std = calc_back(data_nc, t_four, st_ix, max_time, resolution, SQUARE_SIZE, cut_ind,
+                                                     2,
+                                                     an, True)
+            print("back for fourier done")
+            f, res_s = ss.welch(back_cartesian_four, detrend='linear', axis=0, return_onesided=False)
+            print("welch done")
 
-    plt.plot(np.linspace(0, 1 / PERIOD_RADAR, radar_szz.shape[0]), radar_szz, label="radar")
+            res_s = ss.medfilt(res_s, 5)
+            m0, m1, radar_szz = process_fourier(res_s, np.median(data_nc.variables["sog_radar"][st_ix: st_ix + t_four]),
+                                                an + np.median(data_nc.variables["giro_radar"][st_ix: st_ix + t_four]),
+                                                WIDTH_DISPERSION, PERIOD_RADAR, k_min, k_max)
+
+    # read parameters obtained by buoy for comparing
+    buoy_freq = data_nc.variables["freq_manual"]
+    buoy_Szz = data_nc.variables["Szz_manual"]
+    buoy_swh = data_nc.variables["H0_manual"]
+    buoy_per = data_nc.variables["Tp_manual"]
+    buoy_ang = data_nc.variables["Theta_p_manual"]
+
+    plt.close()
+    plt.plot(np.linspace(0, 1 / PERIOD_RADAR, radar_szz.shape[0]),
+             radar_szz / np.max(radar_szz) * np.max(np.array(buoy_Szz[:40])), label="radar")
+    plt.plot(buoy_freq[:40], buoy_Szz[:40], label="buoy")
     plt.legend()
     plt.grid()
     plt.savefig("pics/freq_" + str(name[-17:-3]) + ".png")
     plt.show()
 
-    log_file.loc[log_file["name"] == name[-17:-3], ["radar_an"]] = angles[0]
-    log_file.loc[log_file["name"] == name[-17:-3], ["radar_m0"]] = m0
-    log_file.loc[log_file["name"] == name[-17:-3], ["radar_per"]] = PERIOD_RADAR / (
+    output_file.loc[output_file["name"] == int(name[-17:-3]), ["radar_an"]] = angles[0]
+
+    output_file.loc[output_file["name"] == int(name[-17:-3]), ["radar_m0"]] = m0
+    output_file.loc[output_file["name"] == int(name[-17:-3]), ["radar_per"]] = PERIOD_RADAR / (
             np.argmax(radar_szz) / radar_szz.shape[0])
+    output_file.loc[output_file["name"] == int(name[-17:-3]), ["buoy_swh"]] = buoy_swh[0]
+    output_file.loc[output_file["name"] == int(name[-17:-3]), ["buoy_per"]] = buoy_per[0]
+    output_file.loc[output_file["name"] == int(name[-17:-3]), ["buoy_ang"]] = buoy_ang[0]
 
-    if len(angles) > 1:
-        log_file.loc[log_file["name"] == name[-17:-3], ["radar_an2"]] = angles[1]
+    output_file.loc[output_file["name"] == int(name[-17:-3]), ["radar_an2"]] = angles[-1]
 
-    log_file.to_csv("sheets/stations_data12.csv", index=False)
+    output_file.to_csv(PATH + "sheets/stations_data12.csv", index=False)
 
     print("station " + name[-17:-3] + " processed and saved")
+
     data_nc.close()
