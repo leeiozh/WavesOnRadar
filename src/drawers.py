@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 PATH = '/storage/kubrick/ezhova/WavesOnRadar/'
 
+
 def make_anim_radon(array, name):
     def anim(i):
         # print(i)
@@ -66,11 +67,19 @@ def make_anim_four(array, name):
     animation.save(PATH + "gifs/" + str(name) + ".gif", writer=writer)
 
 
-def make_shot(array, name):
-    fig, axs = plt.subplots(1, 1, figsize=(7, 7), facecolor='w', edgecolor='k')
-    im = axs.imshow(array, origin='lower', cmap='Greys', interpolation='None')
-    plt.colorbar(im)
-    plt.savefig(PATH + "pics/" + str(name) + ".png", dpi=300)
+def make_shot(array, name, color=False):
+    fig, axs = plt.subplots(1, 1, figsize=(4, 4), facecolor='w', edgecolor='k')
+    if not color:
+        im = axs.imshow(array, origin='lower', cmap='Greys', interpolation='None')
+    else:
+        im = axs.imshow(array, origin='lower', cmap='gnuplot', interpolation='None', extent=[0, 180, -360, 360],
+                        aspect=0.25)
+        axs.plot(np.arange(180), ((np.std(array, axis=0)) / np.max(np.std(array, axis=0)) - 1) * 1000,
+                 color='black', label=r'$\sigma(\rho)$')
+    axs.set_xlabel(r"Angle $\theta$, deg")
+    axs.set_ylabel(r"Distance $\rho$, m")
+    plt.legend()
+    plt.savefig(PATH + "pics/" + str(name) + ".png", dpi=700, bbox_inches='tight')
 
 
 def make_anim_plot(array, name):

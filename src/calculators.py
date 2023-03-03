@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+import numpy as np
 from skimage.transform import radon
 from scipy.integrate import trapezoid
 import scipy.fft as sf
@@ -158,7 +160,7 @@ def calc_autocorr(array: np.ndarray):
     return res / (array.shape[0])
 
 
-def thresh_radon(array: np.ndarray, threshold: float, mask_circle: np.ndarray):
+def radon_process(array: np.ndarray, threshold: float, mask_circle: np.ndarray):
     """
     preprocess filtering (only threshold) and transforming by Radon
     @param array: input data
@@ -176,11 +178,12 @@ def thresh_radon(array: np.ndarray, threshold: float, mask_circle: np.ndarray):
     return radon_array
 
 
-def calc_std(data_nc, start_ind: int, version: bool):
+def calc_std(data_nc, start_ind: int, max_time: int, version: bool):
     """
     calculating dispersion of some serial shots to find more clean zone of data
     @param data_nc: input netcdf data
     @param start_ind: zero buoy time shot
+    @param max_time: full number of recorded shots
     @param version: for old versions of variables names
     @return azimuth and distance of clear zone
     """
@@ -190,8 +193,16 @@ def calc_std(data_nc, start_ind: int, version: bool):
     for t in range(bck_cntr.shape[0]):
         if version:
             bck_cntr[t] = data_nc.variables["bsktr_radar"][t + start_ind][:, rho_bck_0:rho_bck_0 + bck_cntr.shape[2]]
+            if t < max_time:
+                back_polar = np.transpose(data_nc.variables["bsktr_radar"][t + start_ind])
+            else:
+                back_polar = np.transpose(data_nc.variables["bsktr_radar"][- t - start_ind + 2 * max_time - 1])
         else:
             bck_cntr[t] = data_nc.variables["bsktr"][t + start_ind][:, rho_bck_0:rho_bck_0 + bck_cntr.shape[2]]
+            if t < max_time:
+                back_polar = np.transpose(data_nc.variables["bsktr"][t + start_ind])
+            else:
+                back_polar = np.transpose(data_nc.variables["bsktr"][- t - start_ind + 2 * max_time - 1])
 
     std_array = np.std(bck_cntr, axis=0)
     # plt.imshow(std_array, cmap='Greys', origin='lower')
@@ -235,7 +246,7 @@ def calc_back(data_nc, calc_time: int, start_ind: int, max_time: int, resolution
     for t in range(calc_time):
 
         if t % 60 == 0:
-            angle_std, rad_std = calc_std(data_nc, start_ind + t, version)
+            angle_std, rad_std = calc_std(data_nc, start_ind + t, max_time, version)
             ang_std.append(angle_std)
 
             if np.abs(angle_std - 6) < 6:  # 6 degrees is gluing place, we need avoid it
@@ -282,7 +293,8 @@ def calc_back(data_nc, calc_time: int, start_ind: int, max_time: int, resolution
     return back, res_an
 
 
-def cut_one_harm_3d(data: np.ndarray, df: int, turn_period: int, k_min: float, k_max: float, speed: float, angle: float,
+def cut_one_harm_3d(data: np.ndarray, df: int, turn_period: float, k_min: float, k_max: float, speed: float,
+                    angle: float,
                     inverse=False, flag_speed=1):
     """
     cutting main harmonics \omega = \sqrt{gk} + kV
@@ -332,7 +344,48 @@ def cut_one_harm_3d(data: np.ndarray, df: int, turn_period: int, k_min: float, k
     return res
 
 
-def process_fourier(array: np.ndarray, speed: float, angle: float, df: int, turn_period: float, k_min: float,
+def _mark_one_harm(data: np.ndarray, df: int, turn_period: float, k_min: float, k_max: float, speed: float,
+                   angle: float, inverse=False, flag_speed=1):
+    """
+    cutting main harmonics \omega = \sqrt{gk} + kV
+    @param data: input data after fourier transform with background and signal
+    @param df: window of frequency for cutting
+    @param turn_period: period of one radar's turn
+    @param k_min: minimum of wave number
+    @param k_max: maximum of wave number
+    @param speed: speed of vessel in meters/sec
+    @param angle: angle between speed and wave vector
+    @param inverse: True if needed to mirror input array
+    @param flag_speed: forward/backward flag
+    return input array with zeroes on elements in dispersion relation
+    """
+    res = np.copy(data)
+    for k_x in range(data.shape[1]):
+        for k_y in range(data.shape[2]):
+            alpha = np.arctan2(k_y, k_x) + np.pi * angle / 180  # + np.pi / 4
+            # convert from wave vector in pix to wave number in rad/meters
+            k_abs = np.sqrt(k_x ** 2 + k_y ** 2) / data.shape[1] * k_max + k_min
+            # calculating a frequency by dispersion relation
+            freq = np.sqrt(9.81 * k_abs) - flag_speed * k_abs * speed * np.cos(alpha)
+
+            freq /= (2 * np.pi)
+            # convert in index
+            freq *= (turn_period * 256)
+            freq = int(freq)
+
+            if inverse:
+                freq -= df
+
+            left = min(max(freq - df, 0), 255)
+            right = min(freq + df + 1, 255)
+
+            res[left, k_x, k_y] = 0
+            res[right, k_x, k_y] = 0
+
+    return res
+
+
+def process_fourier(name, array: np.ndarray, speed: float, angle: float, df: int, turn_period: float, k_min: float,
                     k_max: float):
     """
     calculate specter from 3D cartesian zone
@@ -346,28 +399,42 @@ def process_fourier(array: np.ndarray, speed: float, angle: float, df: int, turn
     """
     trap = np.trapz(array[:, 10, :])
 
+    plt.plot(trap)
+    plt.show()
+
     if np.sum(trap[array.shape[0] // 5:array.shape[0] // 2]) > np.sum(trap[array.shape[0] // 2:- array.shape[0] // 5]):
 
         data_bgn1 = cut_one_harm_3d(array, df, turn_period, k_min, k_max, speed, angle, False, 1)
         data_bgn2 = cut_one_harm_3d(array, df, turn_period, k_min, k_max, speed, angle, False, -1)
 
+        mark_disp1 = _mark_one_harm(array, df, turn_period, k_min, k_max, speed, angle, False, 1)
+        mark_disp2 = _mark_one_harm(array, df, turn_period, k_min, k_max, speed, angle, False, -1)
+
         if np.sum(data_bgn1) < np.sum(data_bgn2):
             data_bgn = data_bgn1
+            mark_disp = mark_disp1
         else:
             data_bgn = data_bgn2
+            mark_disp = mark_disp2
         data_disp = array - data_bgn
 
     else:
-        data_bgn1 = cut_one_harm_3d(np.flip(array, 0), df, turn_period, k_min, k_max, speed, angle,
-                                    True, 1)
-        data_bgn2 = cut_one_harm_3d(np.flip(array, 0), df, turn_period, k_min, k_max, speed, angle,
-                                    True, -1)
+        data_bgn1 = cut_one_harm_3d(np.flip(array, 0), df, turn_period, k_min, k_max, speed, angle, True, 1)
+        data_bgn2 = cut_one_harm_3d(np.flip(array, 0), df, turn_period, k_min, k_max, speed, angle, True, -1)
+
+        mark_disp1 = _mark_one_harm(array, df, turn_period, k_min, k_max, speed, angle, True, 1)
+        mark_disp2 = _mark_one_harm(array, df, turn_period, k_min, k_max, speed, angle, True, -1)
+
         if np.sum(data_bgn1) > np.sum(data_bgn2):
             data_bgn = data_bgn1
+            mark_disp = mark_disp1
         else:
             data_bgn = data_bgn2
+            mark_disp = mark_disp2
+
         data_disp = np.flip(array, 0) - data_bgn
 
+    make_anim_four(mark_disp, "mark_disp_" + str(name[-7:-3]))
     # make_anim_four(array, "or_2_" + str(name[-17:-3]))
     # make_anim_four(data_bgn, "bgn_2_" + str(name[-17:-3]))
     # make_anim_four(data_disp, "disp_2_" + str(name[-17:-3]))
@@ -388,6 +455,14 @@ def process_fourier(array: np.ndarray, speed: float, angle: float, df: int, turn
     m1 = 0
 
     return m0, m1, freq
+
+
+def calc_dispersion(name, array: np.ndarray, speed: float, angle: float, df: int, turn_period: float, k_min: float,
+                    k_max: float):
+    array_half = array[:, : array.shape[1] // 2] + np.flipud(array[:, array.shape[1] // 2:])
+    make_anim_four(array_half, "mark_disp_" + str(name[-7:-3]))
+
+    return 0
 
 
 """

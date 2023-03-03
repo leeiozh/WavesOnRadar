@@ -8,10 +8,10 @@ from src.drawers import *
 
 PATH = '/storage/kubrick/ezhova/WavesOnRadar/'
 
-t_rad = 128  # количество оборотов, учитываемое преобразованием Радона для определения направления
+t_rad = 96  # количество оборотов, учитываемое преобразованием Радона для определения направления
 t_four = 720  # количество оборотов, учитываемое преобразованием Фурье
 PERIOD_RADAR = 2.5  # период оборота радара
-WIDTH_DISPERSION = 7  # (полуширина + 1) в пикселах вырезаемой области Омега из дисперсионного соотношения
+WIDTH_DISPERSION = 11  # (полуширина + 1) в пикселах вырезаемой области Омега из дисперсионного соотношения
 cut_ind = 32  # отсечка массива после преобразования Фурье
 resolution = 4096  # разрешение картинки по обеим осям (4096 -- максимальное, его лучше не менять)
 THRESHOLD = 0.5  # пороговое значение для фильтра к преобразованию Радона
@@ -89,10 +89,11 @@ for name in stations:
 
     # make_anim_back(back_cart_3d_rad, "back_ " + name[-7:-3])
 
-    radon_array = thresh_radon(back_cart_3d_rad, THRESHOLD, mask_circle)
+    radon_array = radon_process(back_cart_3d_rad, THRESHOLD, mask_circle)
     print("radon done")
 
-    # make_anim_radon(radon_array, "radon_" + name[-7:-3])
+    # for i in range(10):
+    #    make_shot(radon_array[i], "radon_" + name[-7:-3] + str(i), True)
 
     angles, direct = find_main_directions(radon_array, 2, 15)
     print("obtained direction >> ", angles)
@@ -102,7 +103,7 @@ for name in stations:
         # try to cut data from 270 azimuth
         back_cart_3d_rad, ang_std = calc_back(data_nc, t_rad, st_ix, max_time, resolution, SQUARE_SIZE, SIZE_SQUARE_PIX,
                                               1, 0, True)
-        radon_array = thresh_radon(back_cart_3d_rad, THRESHOLD, mask_circle)
+        radon_array = radon_process(back_cart_3d_rad, THRESHOLD, mask_circle)
         angles2, direct2 = find_main_directions(radon_array, 1, 10)
         print("bad angles, new directions >> ", angles2, direct2)
         if np.abs(direct2[0]) > np.abs(direct[0]):
@@ -137,7 +138,8 @@ for name in stations:
             print("welch done")
 
             res_s = ss.medfilt(res_s, 5)
-            m0, m1, radar_szz = process_fourier(res_s, np.median(data_nc.variables["sog_radar"][st_ix: st_ix + t_four]),
+            m0, m1, radar_szz = process_fourier(name, res_s,
+                                                np.median(data_nc.variables["sog_radar"][st_ix: st_ix + t_four]),
                                                 an + np.median(data_nc.variables["giro_radar"][st_ix: st_ix + t_four]),
                                                 WIDTH_DISPERSION, PERIOD_RADAR, k_min, k_max)
 
@@ -167,6 +169,8 @@ for name in stations:
     output_file.loc[output_file["name"] == int(name[-7:-3]), ["buoy_ang"]] = buoy_ang[0]
 
     output_file.loc[output_file["name"] == int(name[-7:-3]), ["radar_an2"]] = angles[-1]
+    output_file.loc[output_file["name"] == int(name[-7:-3]), ["wdir"]] = np.median(
+        data_nc.variables["wdir"][st_ix: st_ix + t_four])
 
     output_file.to_csv(PATH + "sheets/stations_data13.csv", index=False)
 
