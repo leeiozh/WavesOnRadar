@@ -1,10 +1,13 @@
-import matplotlib.pyplot as plt
-import numpy as np
 from skimage.transform import radon
 from scipy.integrate import trapezoid
 import scipy.fft as sf
 from src.drawers import *
 from src.structures import *
+from scipy.optimize import curve_fit
+
+
+def dispersion_func(k, vcos):
+    return (np.sqrt(9.81 * k) - k * vcos) / 2 / np.pi
 
 
 @njit
@@ -91,10 +94,6 @@ def find_main_directions(radon_array: np.ndarray, num_peaks: int, window: int):
     """
 
     copy = np.mean(np.std(radon_array, axis=1), axis=0)
-
-    plt.plot(copy)
-    plt.grid()
-    plt.show()
 
     grad = np.gradient(copy)
     ans = []  # array for obtained angles of peaks
@@ -192,17 +191,20 @@ def calc_std(data_nc, start_ind: int, max_time: int, version: bool):
     rho_bck_0 = 700
     for t in range(bck_cntr.shape[0]):
         if version:
-            bck_cntr[t] = data_nc.variables["bsktr_radar"][t + start_ind][:, rho_bck_0:rho_bck_0 + bck_cntr.shape[2]]
-            if t < max_time:
-                back_polar = np.transpose(data_nc.variables["bsktr_radar"][t + start_ind])
+
+            if t < max_time - 1:
+                bck_cntr[t] = data_nc.variables["bsktr_radar"][t + start_ind][:,
+                              rho_bck_0:rho_bck_0 + bck_cntr.shape[2]]
             else:
-                back_polar = np.transpose(data_nc.variables["bsktr_radar"][- t - start_ind + 2 * max_time - 1])
+                bck_cntr[t] = data_nc.variables["bsktr_radar"][- t - start_ind + 2 * max_time - 1][:,
+                              rho_bck_0:rho_bck_0 + bck_cntr.shape[2]]
         else:
             bck_cntr[t] = data_nc.variables["bsktr"][t + start_ind][:, rho_bck_0:rho_bck_0 + bck_cntr.shape[2]]
             if t < max_time:
-                back_polar = np.transpose(data_nc.variables["bsktr"][t + start_ind])
+                bck_cntr[t] = data_nc.variables["bsktr"][t + start_ind][:, rho_bck_0:rho_bck_0 + bck_cntr.shape[2]]
             else:
-                back_polar = np.transpose(data_nc.variables["bsktr"][- t - start_ind + 2 * max_time - 1])
+                bck_cntr[t] = data_nc.variables["bsktr"][- t - start_ind + 2 * max_time - 1][:,
+                              rho_bck_0:rho_bck_0 + bck_cntr.shape[2]]
 
     std_array = np.std(bck_cntr, axis=0)
     # plt.imshow(std_array, cmap='Greys', origin='lower')
@@ -246,7 +248,7 @@ def calc_back(data_nc, calc_time: int, start_ind: int, max_time: int, resolution
     for t in range(calc_time):
 
         if t % 60 == 0:
-            angle_std, rad_std = calc_std(data_nc, start_ind + t, max_time, version)
+            angle_std, rad_std = calc_std(data_nc, start_ind, max_time, version)
             ang_std.append(angle_std)
 
             if np.abs(angle_std - 6) < 6:  # 6 degrees is gluing place, we need avoid it
@@ -258,6 +260,7 @@ def calc_back(data_nc, calc_time: int, start_ind: int, max_time: int, resolution
             zone = Area(area_size, area_size, 1360, 270, 0)
         if flag_area == 2:
             zone = Area(area_size, area_size, rad_std, angle_std, (-angle_std - an) % 360)
+            # zone = Area(area_size, area_size, rad_std, angle_std, (-angle_std - an) % 360)
 
         if version:
             area_mask_div, area_mask_mod, min_max = make_area_mask(zone, data_nc.variables["rad_radar"][-1],
@@ -347,7 +350,7 @@ def cut_one_harm_3d(data: np.ndarray, df: int, turn_period: float, k_min: float,
 def _mark_one_harm(data: np.ndarray, df: int, turn_period: float, k_min: float, k_max: float, speed: float,
                    angle: float, inverse=False, flag_speed=1):
     """
-    cutting main harmonics \omega = \sqrt{gk} + kV
+    marking main harmonics \omega = \sqrt{gk} + kV
     @param data: input data after fourier transform with background and signal
     @param df: window of frequency for cutting
     @param turn_period: period of one radar's turn
@@ -385,6 +388,178 @@ def _mark_one_harm(data: np.ndarray, df: int, turn_period: float, k_min: float, 
     return res
 
 
+
+@njit
+def calc_abs_wave_vector(array: np.ndarray) -> np.ndarray:
+    """
+    converting from (k_x, k_y, omega) to (|k|, omega)
+    @param array: input data in (k_x, k_y, omega)
+    """
+    res = np.zeros(shape=(array.shape[0], array.shape[1]), dtype=float64)
+    # loop for k_x and k_y
+    for k_x in range(array.shape[1]):
+        for k_y in range(array.shape[2]):
+            k_abs = np.sqrt(k_x * k_x + k_y * k_y)
+            k_abs_div = int(k_abs)
+            k_abs_mod = k_abs - k_abs_div
+            # analog of linear interpolation
+            if k_abs_div < res.shape[1]:
+                res[:, k_abs_div] += (1 - k_abs_mod) * array[:, k_x, k_y]
+            if k_abs_div < res.shape[1] - 1:
+                res[:, k_abs_div + 1] += k_abs_mod * array[:, k_x, k_y]
+    return res
+
+
+def calc_dispersion(name, array: np.ndarray, speed: float, df: int, turn_period: float, k_max: float):
+    arr_2d = calc_abs_wave_vector(array)
+
+    down = np.copy(arr_2d[:arr_2d.shape[0] // 2, :])
+    up = np.copy(arr_2d[arr_2d.shape[0] // 2:, :])
+    arr_2d[:arr_2d.shape[0] // 2, :] += np.flip(up, axis=0)
+    arr_2d[arr_2d.shape[0] // 2:, :] += np.flip(down, axis=0)
+
+    fig, axs = plt.subplots(1, 1, figsize=(4, 4), facecolor='w', edgecolor='k')
+    fig.subplots_adjust(hspace=.3, wspace=.3)
+    axs.get_xaxis().set_tick_params(which='both', direction='in')
+    axs.get_yaxis().set_tick_params(which='both', direction='in')
+    plt.rc('axes', axisbelow=True)
+
+    axs.imshow(arr_2d, origin='lower', cmap='gnuplot', interpolation='None', aspect=0.6,
+               extent=[0, k_max, 0, 1 / turn_period])
+    axs.set_xlabel(r"Wave number $k$, rad/m")
+    axs.set_ylabel(r"Frequency $f$, 1/s")
+
+    max_freq = np.argmax(arr_2d, axis=0)
+
+    grad = np.gradient(max_freq)
+
+    if np.max(max_freq) > arr_2d.shape[0] // 2 - 10 and np.sum(grad[np.argmax(max_freq) + 1:] < 0):
+        max_freq[np.argmax(max_freq) + 1:] *= -1
+        max_freq[np.argmax(max_freq) + 1:] += arr_2d.shape[0]
+
+    if np.mean(max_freq) < arr_2d.shape[0] // 10:
+        print("ATTENTION ATTENTION ATTENTION ATTENTION")
+
+    mask = np.abs(grad) < 3 * np.median(np.abs(grad))
+    mask *= max_freq > arr_2d.shape[0] // 10
+    mask *= max_freq < 9 * arr_2d.shape[0] // 10
+    max_freq[0] = 0
+    mask[0] = True
+
+    popt, pcov = curve_fit(dispersion_func, np.linspace(0, k_max, arr_2d.shape[1])[mask],
+                           max_freq[mask] / arr_2d.shape[0] / turn_period,
+                           sigma=1 / np.max(arr_2d, axis=0)[mask], absolute_sigma=True)
+
+    axs.scatter(np.linspace(0, k_max, arr_2d.shape[1]), max_freq / arr_2d.shape[0] / turn_period, s=2)
+    axs.scatter(np.linspace(0, k_max, arr_2d.shape[1])[mask], max_freq[mask] / arr_2d.shape[0] / turn_period, s=2)
+    axs.plot(np.linspace(0, k_max, arr_2d.shape[1]), dispersion_func(np.linspace(0, k_max, arr_2d.shape[1]), 0),
+            ls='--')
+    axs.plot(np.linspace(0, k_max, arr_2d.shape[1]), dispersion_func(np.linspace(0, k_max, arr_2d.shape[1]), *popt),
+            ls='--')
+
+    noise = np.copy(arr_2d)
+    l = []
+    r = []
+
+    for k in range(0, arr_2d.shape[1]):
+
+        if k > 0:
+            arr_2d[:, k] *= (k ** (-1.15))
+            noise[:, k] *= (k ** (-1.15))
+
+        freq = dispersion_func(k / arr_2d.shape[1] * k_max, *popt) * 256 * turn_period
+        # df_new = df * np.log(np.max(arr_2d[:, k])) / np.log(np.max(arr_2d))
+        if (freq > arr_2d.shape[0]) or (k > arr_2d.shape[1] - 10):
+            df_new = 1
+        else:
+            df_new = df * np.log(arr_2d[int(freq), k]) / np.log(np.max(arr_2d))
+        #
+        if (freq > 2 * df) and (freq < arr_2d.shape[0] - 2 * df):
+            df_new = df * (np.log(arr_2d[round(freq), k]) - np.log(
+                np.min(arr_2d[round(freq) - 2 * df: round(freq) + 2 * df, k]))) / (
+                             np.log(np.max(arr_2d[round(freq) - 2 * df: round(freq) + 2 * df, :])) - np.log(
+                                np.min(arr_2d[round(freq) - 2 * df: round(freq) + 2 * df, k])))
+
+        left = max(round(freq - df_new), 0)
+        l.append(left)
+        right = min(round(freq + df_new + 1), 256)
+        r.append(right)
+
+        if right > left:
+            noise[left: right, k] = np.zeros(right - left)
+
+        # for f in range(left, right):
+        #   dist_f = np.abs(round(f - freq - df_new // 2))
+        #   # special coefficients for smooth cutting
+        #   if dist_f <= df_new / 3:
+        #       noise[f, k] = 0
+        #   elif dist_f <= 7 * df_new / 9:
+        #       noise[f, k] *= 0.3
+        #   else:
+        #       noise[f, k] *= 0.8
+
+    axs.plot(np.linspace(0, k_max, 32), np.array(l) / 256 / turn_period, color='white', linewidth=1)
+    axs.plot(np.linspace(0, k_max, 32), np.array(r) / 256 / turn_period, color='white', linewidth=1)
+    plt.savefig(PATH + "pics/" + name[-7:-3] + ".png", bbox_inches='tight', dpi=700)
+    plt.show()
+
+    int_ind_k = 0
+    int_ind_f = 0
+
+    signal = arr_2d - noise
+
+    ss = trapezoid(signal[int_ind_k:])
+    nn = trapezoid(noise[int_ind_k:])
+
+    freq_specter = ss / nn
+    m0 = trapezoid(ss[int_ind_f:]) / trapezoid(nn[int_ind_f:])
+    m1 = trapezoid(ss[int_ind_f:] * np.linspace(0, 1 / turn_period, ss[int_ind_f:].shape[0])) / \
+         trapezoid(nn[int_ind_f:] * np.linspace(0, 1 / turn_period, ss[int_ind_f:].shape[0]))
+
+    return m0, m1, freq_specter, np.arccos(max(min(popt[0] / speed, 1), -1)) / np.pi * 180
+
+
+"""
+def calc_forward_toward(array: np.ndarray, window: int):
+
+    determine direction of wave in current packet
+    :param array: input 2d array of data after Radon transform cut in current direction
+    :param window: if AN is found peak, then in [AN - window, AN + window] new peaks won't find
+
+    toward = np.zeros(array.shape[0], dtype=int)
+    copy = np.copy(array[0])
+    SIZE = 5  # number of peaks
+    c_win = 2  # coefficient in window for zeroing
+    argmax_old = np.zeros(SIZE, dtype=int)
+    for i in range(SIZE):
+        argmax_old[i] = np.argmax(copy)
+        _zero_array(copy, argmax_old[i], c_win * window)
+
+    for t in range(1, array.shape[0]):
+
+        copy = np.copy(array[t])
+        argmax_new = np.zeros(SIZE, dtype=int)
+        for i in range(SIZE):
+            argmax_new[i] = np.argmax(
+                copy[max(0, argmax_old[i] - window): min(argmax_old[i] + window, len(copy))]) - window
+
+            if argmax_new[i] >= 0:
+                toward[t] += 1
+            else:
+                toward[t] -= 1
+
+        for i in range(SIZE):
+            argmax_old[i] = np.argmax(copy)
+            _zero_array(copy, argmax_old[i], c_win * window)
+
+    print(toward)
+    print(np.abs(np.mean(toward)) / SIZE)
+
+    if np.abs(np.mean(toward)) / SIZE <= 0.1:
+        return False, False
+
+    return True, np.sum(toward) >= 0
+"""
 def process_fourier(name, array: np.ndarray, speed: float, angle: float, df: int, turn_period: float, k_min: float,
                     k_max: float):
     """
@@ -399,8 +574,8 @@ def process_fourier(name, array: np.ndarray, speed: float, angle: float, df: int
     """
     trap = np.trapz(array[:, 10, :])
 
-    plt.plot(trap)
-    plt.show()
+    # plt.plot(trap)
+    # plt.show()
 
     if np.sum(trap[array.shape[0] // 5:array.shape[0] // 2]) > np.sum(trap[array.shape[0] // 2:- array.shape[0] // 5]):
 
@@ -455,54 +630,3 @@ def process_fourier(name, array: np.ndarray, speed: float, angle: float, df: int
     m1 = 0
 
     return m0, m1, freq
-
-
-def calc_dispersion(name, array: np.ndarray, speed: float, angle: float, df: int, turn_period: float, k_min: float,
-                    k_max: float):
-    array_half = array[:, : array.shape[1] // 2] + np.flipud(array[:, array.shape[1] // 2:])
-    make_anim_four(array_half, "mark_disp_" + str(name[-7:-3]))
-
-    return 0
-
-
-"""
-def calc_forward_toward(array: np.ndarray, window: int):
-
-    determine direction of wave in current packet
-    :param array: input 2d array of data after Radon transform cut in current direction
-    :param window: if AN is found peak, then in [AN - window, AN + window] new peaks won't find
-
-    toward = np.zeros(array.shape[0], dtype=int)
-    copy = np.copy(array[0])
-    SIZE = 5  # number of peaks
-    c_win = 2  # coefficient in window for zeroing
-    argmax_old = np.zeros(SIZE, dtype=int)
-    for i in range(SIZE):
-        argmax_old[i] = np.argmax(copy)
-        _zero_array(copy, argmax_old[i], c_win * window)
-
-    for t in range(1, array.shape[0]):
-
-        copy = np.copy(array[t])
-        argmax_new = np.zeros(SIZE, dtype=int)
-        for i in range(SIZE):
-            argmax_new[i] = np.argmax(
-                copy[max(0, argmax_old[i] - window): min(argmax_old[i] + window, len(copy))]) - window
-
-            if argmax_new[i] >= 0:
-                toward[t] += 1
-            else:
-                toward[t] -= 1
-
-        for i in range(SIZE):
-            argmax_old[i] = np.argmax(copy)
-            _zero_array(copy, argmax_old[i], c_win * window)
-
-    print(toward)
-    print(np.abs(np.mean(toward)) / SIZE)
-
-    if np.abs(np.mean(toward)) / SIZE <= 0.1:
-        return False, False
-
-    return True, np.sum(toward) >= 0
-"""

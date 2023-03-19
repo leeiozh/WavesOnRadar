@@ -51,13 +51,13 @@ def make_anim_four(array, name):
     def anim(i):
         # print(i)
         im.set_array(array[:, :, i])
-        im2.set_array(array[:, i, :])
+        # im2.set_array(array[:, i, :])
         # axs.text(100, 200, str(i), color='black', bbox=dict(boxstyle='round', facecolor='white'))
         return [im]
 
-    fig, axs = plt.subplots(1, 2, figsize=(7, 7), facecolor='w', edgecolor='k')
-    im = axs[0].imshow(array[:, :, 0], origin='lower', cmap='gnuplot', aspect=0.1, interpolation='None')
-    im2 = axs[1].imshow(array[:, 0, :], origin='lower', cmap='gnuplot', aspect=0.1, interpolation='None')
+    fig, axs = plt.subplots(1, 1, figsize=(7, 7), facecolor='w', edgecolor='k')
+    im = axs.imshow(array[:, :, 0], origin='lower', cmap='gnuplot', aspect=0.2, interpolation='None')
+    # im2 = axs[1].imshow(array[:, 0, :], origin='lower', cmap='gnuplot', aspect=0.1, interpolation='None')
 
     animation = FuncAnimation(fig, anim, frames=array.shape[1], interval=100000, blit=True)
     writer = PillowWriter(fps=0.5)

@@ -8,10 +8,10 @@ from src.drawers import *
 
 PATH = '/storage/kubrick/ezhova/WavesOnRadar/'
 
-t_rad = 96  # количество оборотов, учитываемое преобразованием Радона для определения направления
+t_rad = 256  # количество оборотов, учитываемое преобразованием Радона для определения направления
 t_four = 256  # количество оборотов, учитываемое преобразованием Фурье
 PERIOD_RADAR = 2.5  # период оборота радара
-WIDTH_DISPERSION = 11  # ширина в пикселах вырезаемой области Омега из дисперсионного соотношения
+WIDTH_DISPERSION = 15  # ширина в пикселах вырезаемой области Омега из дисперсионного соотношения
 cut_ind = 32  # отсечка массива после преобразования Фурье
 resolution = 4096  # разрешение картинки по обеим осям (4096 -- максимальное, его лучше не менять)
 THRESHOLD = 0.5  # пороговое значение для фильтра к преобразованию Радона
@@ -53,86 +53,94 @@ for name in stations:
         print(name, "is short, max_time", max_time)
         print("!!!!!!!!!!!!!!!!!")
 
-    if max_time < t_four // 2:  # we can apply mirror not less than half data
-        break
+    if max_time > t_four / 2:  # we can apply mirror not less than half data
 
-    # try cut data from azimuth with maximum dispersion
-    back_cart_3d_rad, ang_std = calc_back(data_nc, t_rad, st_ix, max_time, resolution, SQUARE_SIZE, SIZE_SQUARE_PIX, 0,
-                                          0, True)
-
-    print("back for radon done")
-
-    print("ang_std >> ", ang_std)
-
-    # make_anim_back(back_cart_3d_rad, "back_ " + name[-17:-6])
-
-    radon_array = radon_process(back_cart_3d_rad, THRESHOLD, mask_circle)
-    print("radon done")
-
-    # make_anim_radon(radon_array, "radon_" + name[-17:-6])
-
-    angles, direct = find_main_directions(radon_array, 2, 15)
-    print("obtained direction >> ", angles)
-    print("obtained directs >> ", direct)
-
-    if np.abs(direct[0]) < 0.1:  # if data so noisy that we can't determine directions
-        # try to cut data from 270 azimuth
+        # try cut data from azimuth with maximum dispersion
         back_cart_3d_rad, ang_std = calc_back(data_nc, t_rad, st_ix, max_time, resolution, SQUARE_SIZE, SIZE_SQUARE_PIX,
-                                              1, 0, True)
+                                              0, 0, True)
+
+        print("back for radon done")
+
+        print("ang_std >> ", ang_std)
+
+        # make_anim_back(back_cart_3d_rad, "back_ " + name[-17:-6])
+
         radon_array = radon_process(back_cart_3d_rad, THRESHOLD, mask_circle)
-        angles2, direct2 = find_main_directions(radon_array, 1, 10)
-        print("bad angles, new directions >> ", angles2, direct2)
-        if np.abs(direct2[0]) > np.abs(direct[0]):
-            angles = angles2
-            direct = direct2
+        print("radon done")
 
-    direct_std = calc_autocorr(radon_array[:, :, ang_std % 180])
-    print("direct std", direct_std)
-    if direct_std < 0:
-        if ang_std > 180:
-            ang_std -= 180
-        else:
-            ang_std += 180
+        make_anim_radon(radon_array, "radon_" + name[-17:-6])
 
-    # if the direction obtained by Radon is very different from the largest standard deviation,
-    # we give priority to the standard deviation
-    if np.abs(direct_std) > np.abs(direct[0]) and np.abs(ang_std - angles[0]) > 60:
-        angles[0] = ang_std
+        angles, direct = find_main_directions(radon_array, 1, 15)
+        print("obtained direction >> ", angles)
+        print("obtained directs >> ", direct)
 
-    print("final", angles[0])
+        if np.abs(direct[0]) < 0.1:  # if data so noisy that we can't determine directions
+            # try to cut data from 270 azimuth
+            back_cart_3d_rad, ang_std = calc_back(data_nc, t_rad, st_ix, max_time, resolution, SQUARE_SIZE,
+                                                  SIZE_SQUARE_PIX,
+                                                  1, 0, True)
+            radon_array = radon_process(back_cart_3d_rad, THRESHOLD, mask_circle)
+            angles2, direct2 = find_main_directions(radon_array, 1, 10)
+            print("bad angles, new directions >> ", angles2, direct2)
+            if np.abs(direct2[0]) > np.abs(direct[0]):
+                angles = angles2
+                direct = direct2
 
-    for an in angles:  # loop in every obtained direction (so we can separate different wave systems)
+        direct_std = calc_autocorr(radon_array[:, :, ang_std % 180])
+        print("direct std", direct_std)
+        if direct_std < 0:
+            if ang_std > 180:
+                ang_std -= 180
+            else:
+                ang_std += 180
 
-        # but now we compare only main parameters (because buoy)
+        # if the direction obtained by Radon is very different from the largest standard deviation,
+        # we give priority to the standard deviation
+        if np.abs(direct_std) > np.abs(direct[0]) and np.abs(ang_std - angles[0]) > 60:
+            angles[0] = ang_std
 
-        if an == angles[0]:
-            back_cartesian_four, ang_std = calc_back(data_nc, t_four, st_ix, max_time, resolution, SQUARE_SIZE, cut_ind,
-                                                     2, an, True)
-            print("back for fourier done")
-            f, res_s = ss.welch(back_cartesian_four, detrend='linear', axis=0, return_onesided=False)
-            print("welch done")
+        print("final", angles[0])
 
-            res_s = ss.medfilt(res_s, 5)
-            m0, m1, radar_szz = process_fourier(str(PATH + name), res_s, np.median(data_nc.variables["sog_radar"][st_ix: st_ix + t_four]),
-                                                an - np.median(data_nc.variables["giro_radar"][st_ix: st_ix + t_four]),
-                                                WIDTH_DISPERSION, PERIOD_RADAR, k_min, k_max)
+        for an in angles:  # loop in every obtained direction (so we can separate different wave systems)
 
-    plt.close()
-    plt.plot(np.linspace(0, 1 / PERIOD_RADAR, radar_szz.shape[0]), radar_szz, label="radar")
-    plt.legend()
-    plt.grid()
-    plt.savefig(PATH + "pics/freq_" + str(name[-17:-6]) + ".png")
-    plt.show()
+            # but now we compare only main parameters (because buoy)
 
-    output_file.loc[output_file["name"] == name[-17:-6], ["radar_an"]] = angles[0]
+            if an == angles[0]:
+                back_cartesian_four, ang_std = calc_back(data_nc, t_four, st_ix, max_time, resolution, SQUARE_SIZE,
+                                                         cut_ind,
+                                                         2, an, True)  ## ИСПРАВИТЬ НА 2
+                print("back for fourier done")
+                f, res_s = ss.welch(back_cartesian_four, detrend='linear', axis=0, return_onesided=False)
+                print("welch done")
 
-    output_file.loc[output_file["name"] == name[-17:-6], ["radar_m0"]] = m0
-    output_file.loc[output_file["name"] == name[-17:-6], ["radar_per"]] = PERIOD_RADAR / (
-            np.argmax(radar_szz) / radar_szz.shape[0])
-    output_file.loc[output_file["name"] == name[-17:-6], ["radar_an2"]] = angles[-1]
+                m0, m1, radar_szz, ang_rad = calc_dispersion(name, res_s,
+                                                             np.median(
+                                                                 data_nc.variables["sog_radar"][st_ix: st_ix + t_four]),
+                                                             WIDTH_DISPERSION, PERIOD_RADAR, k_max)
 
-    output_file.to_csv(PATH + "sheets/stations_data12.csv", index=False)
+        # plt.close()
+        # plt.plot(np.linspace(0, 1 / PERIOD_RADAR, radar_szz.shape[0]), radar_szz, label="radar")
+        # plt.legend()
+        # plt.grid()
+        # plt.savefig(PATH + "pics/freq_" + str(name[-17:-6]) + ".png")
+        # plt.show()
 
-    print("station " + name[-17:-6] + " processed and saved")
+        output_file.loc[output_file["name"] == name[-17:-6], ["radar_an"]] = angles[0]
+
+        output_file.loc[output_file["name"] == name[-17:-6], ["radar_m0"]] = m0
+        output_file.loc[output_file["name"] == name[-17:-6], ["radar_per"]] = PERIOD_RADAR / (
+                np.argmax(radar_szz) / radar_szz.shape[0])
+        output_file.loc[output_file["name"] == name[-17:-6], ["radar_an2"]] = angles[-1]
+        output_file.loc[output_file["name"] == name[-17:-6], ["radar_an3"]] = ang_rad
+        output_file.loc[output_file["name"] == name[-17:-6], ["lat_radar"]] = np.mean(
+            data_nc.variables["lat_radar"][st_ix: st_ix + t_four])
+        output_file.loc[output_file["name"] == name[-17:-6], ["lon_radar"]] = np.mean(
+            data_nc.variables["lon_radar"][st_ix: st_ix + t_four])
+        output_file.loc[output_file["name"] == name[-17:-6], ["speed"]] = np.median(
+            data_nc.variables["sog_radar"][st_ix: st_ix + t_four])
+
+        output_file.to_csv(PATH + "sheets/stations_data12.csv", index=False)
+
+        print("station " + name[-17:-6] + " processed and saved")
 
     data_nc.close()
