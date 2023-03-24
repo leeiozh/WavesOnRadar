@@ -15,7 +15,7 @@ def rmse(array1, array2):
     return np.linalg.norm(array1 - array2) / np.sqrt(array1.shape[0])
 
 
-number = '20'
+number = '21'
 
 PATH = '/storage/kubrick/ezhova/WavesOnRadar/'
 

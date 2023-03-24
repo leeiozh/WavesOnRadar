@@ -1,10 +1,12 @@
 import glob
-import netCDF4 as nc
-import scipy.signal as ss
-import pandas as pd
+import numpy as np
 
+import pandas as pd
+import netCDF4 as nc
 from src.calculators import *
 from src.drawers import *
+from src.back import Back
+from numba import float64
 
 PATH = '/storage/kubrick/ezhova/WavesOnRadar/'
 
@@ -81,84 +83,23 @@ for name in stations:
 
     print("station " + name[-7:-3] + " started proccess...")
 
-    # start time in radar data respectfully buoy
     st_ix = np.argmax(np.array(data_nc.variables["time_radar"]) - data_nc.variables["time_buoy"][0] >= 0)
+    max_ix = data_nc.variables["bsktr_radar"].shape[0] - st_ix
 
-    max_time = data_nc.variables["bsktr_radar"].shape[0] - st_ix  # full recorded number of turns
-
-    if max_time < t_four:
-        print("!!!!!!!!!!!!!!!!!")
-        print(name, "is short, max_time", max_time)
-        print("!!!!!!!!!!!!!!!!!")
-
-    if max_time < t_four // 2:  # we can apply mirror not less than half data
+    if max_ix < t_four // 2:  # we can apply mirror not less than half data
+        print(name[-7:-3], '!!!! number of turns is not enough for fourier process =(, max_index =>', max_ix,
+                         'fourier_time =>', t_four)
         break
 
-    # try cut data from azimuth with maximum dispersion
-    back_cart_3d_rad, ang_std = calc_back(data_nc, t_rad, st_ix, max_time, resolution, SQUARE_SIZE, SIZE_SQUARE_PIX, 0,
-                                          0, True)
-
-    print("back for radon done")
-
-    print("ang_std >> ", ang_std)
-
-    # make_anim_back(back_cart_3d_rad, "back_ " + name[-7:-3])
-
-    radon_array = radon_process(back_cart_3d_rad, THRESHOLD, mask_circle)
-    print("radon done")
+    back = Back(data_nc, t_rad, t_four, st_ix, max_ix, mask_circle, THRESHOLD)
+    back.calc_radon(0)
 
     # for i in range(10):
     #    make_shot(radon_array[i], "radon_" + name[-7:-3] + str(i), True)
 
-    angles, direct = find_main_directions(radon_array, 1, 15)
-    print("obtained direction >> ", angles)
-    print("obtained directs >> ", direct)
+    angles = back.directions_search(1, 15)
 
-    if np.abs(direct[0]) < 0.1:  # if data so noisy that we can't determine directions
-        # try to cut data from 270 azimuth
-        back_cart_3d_rad, ang_std = calc_back(data_nc, t_rad, st_ix, max_time, resolution, SQUARE_SIZE, SIZE_SQUARE_PIX,
-                                              1, 0, True)
-        radon_array = radon_process(back_cart_3d_rad, THRESHOLD, mask_circle)
-        angles2, direct2 = find_main_directions(radon_array, 1, 10)
-        print("bad angles, new directions >> ", angles2, direct2)
-        if np.abs(direct2[0]) > np.abs(direct[0]):
-            angles = angles2
-            direct = direct2
-
-    direct_std = calc_autocorr(radon_array[:, :, ang_std % 180])
-    print("direct std", direct_std)
-    if direct_std < 0:
-        if ang_std > 180:
-            ang_std -= 180
-        else:
-            ang_std += 180
-
-    # if the direction obtained by Radon is very different from the largest standard deviation,
-    # we give priority to the standard deviation
-    if np.abs(direct_std) > np.abs(direct[0]) and np.abs(ang_std - angles[0]) > 60:
-        angles[0] = ang_std
-
-    print("final", angles[0])
-
-    for an in angles:  # loop in every obtained direction (so we can separate different wave systems)
-
-        # but now we compare only main parameters (because buoy)
-
-        if an == angles[0]:
-            back_cartesian_four, ang_std = calc_back(data_nc, t_four, st_ix, max_time, resolution, SQUARE_SIZE, cut_ind,
-                                                     2, an, True)
-            print("back for fourier done")
-            f, res_s = ss.welch(back_cartesian_four, detrend='linear', axis=0, return_onesided=False)
-            print("welch done")
-
-            m0, m1, radar_szz, angle_aa = calc_dispersion(name, res_s,
-                                                          np.median(
-                                                              data_nc.variables["sog_radar"][st_ix: st_ix + t_four]),
-                                                          WIDTH_DISPERSION, PERIOD_RADAR, k_max)
-            # m0, m1, radar_szz = process_fourier(name, res_s,
-            #                                     np.median(data_nc.variables["sog_radar"][st_ix: st_ix + t_four]),
-            #                                     an + np.median(data_nc.variables["giro_radar"][st_ix: st_ix + t_four]),
-            #                                     WIDTH_DISPERSION, PERIOD_RADAR, k_min, k_max)
+    m0, m1, radar_szz, angle_aa = back.calc_fourier(angles, 32, WIDTH_DISPERSION, PERIOD_RADAR, name)
 
     # read parameters obtained by buoy for comparing
     buoy_freq = data_nc.variables["freq_manual"]
@@ -191,6 +132,9 @@ for name in stations:
         data_nc.variables["wdir"][st_ix: st_ix + t_four])
     output_file.loc[output_file["name"] == int(name[-7:-3]), ["speed"]] = np.median(
         data_nc.variables["sog_radar"][st_ix: st_ix + t_four])
+    output_file.loc[output_file["name"] == int(name[-7:-3]), ["hdg"]] = np.median(
+        data_nc.variables["giro_radar"][st_ix: st_ix + t_four])
+    output_file.loc[output_file["name"] == int(name[-7:-3]), ["dir_std"]] = back.ang_std
 
     output_file.to_csv(PATH + "sheets/stations_data13.csv", index=False)
 
