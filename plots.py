@@ -4,7 +4,8 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 
-def func(x, A, B):
+def func(x, A, B) \
+        :
     return A + B * np.sqrt(x)
 
 
@@ -108,7 +109,8 @@ axs.set_xlabel("Period by BUOY, s")
 axs.set_ylabel("Period by RADAR, s")
 axs.set_xlim(0, 20)
 axs.set_ylim(0, 20)
-axs.text(12, 3, 'corr =' + str(round(np.corrcoef(df["buoy_per"].to_numpy()[msk1], df["radar_per"].to_numpy()[msk1])[0, 1], 2)))
+axs.text(12, 3,
+         'corr =' + str(round(np.corrcoef(df["buoy_per"].to_numpy()[msk1], df["radar_per"].to_numpy()[msk1])[0, 1], 2)))
 axs.text(12, 4, 'rmse =' + str(round(rmse(df["buoy_per"].to_numpy()[msk1], df["radar_per"].to_numpy()[msk1]), 2)))
 
 plt.savefig(PATH + 'plots/per' + number + '.png', bbox_inches='tight', dpi=1000)
@@ -169,4 +171,23 @@ axs.grid(linestyle=':')
 axs.set_xlabel("Speed over ground, m/s")
 axs.set_ylabel(r"$\frac{|SWH by SAT/BUOY - SWH by RADAR|}{SWH by SAT/BUOY}$")
 plt.savefig(PATH + 'plots/speed2' + number + '.png', bbox_inches='tight', dpi=1000)
+plt.show()
+
+fig, axs = plt.subplots(1, 1, figsize=(8, 4), facecolor='w', edgecolor='k')
+fig.subplots_adjust(hspace=.3, wspace=.3)
+axs.get_xaxis().set_tick_params(which='both', direction='in')
+axs.get_yaxis().set_tick_params(which='both', direction='in')
+plt.rc('axes', axisbelow=True)
+axs.grid(linestyle=':')
+axs.scatter(df["wind_speed"][msk1], np.abs(df["buoy_swh"][msk1] - func(df["radar_m0"][msk1], *popt1)) / df["buoy_swh"][msk1],
+            label='buoy', edgecolor='black', s=40)
+axs.scatter(df2["wind_speed"][msk2],
+            np.abs(df2["sat_swh"][msk2] - func(df2["radar_m0"][msk2], *popt)) / df2["sat_swh"][msk2], label='satellite',
+            edgecolor='black', s=40)
+plt.legend()
+#axs.set_ylim(-0.25, 1.5)
+axs.grid(linestyle=':')
+axs.set_xlabel("Wind speed, m/s")
+axs.set_ylabel(r"$\frac{|SWH by SAT/BUOY - SWH by RADAR|}{SWH by SAT/BUOY}$")
+plt.savefig(PATH + 'plots/wind' + number + '.png', bbox_inches='tight', dpi=1000)
 plt.show()

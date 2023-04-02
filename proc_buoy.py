@@ -92,6 +92,7 @@ for name in stations:
         break
 
     back = Back(data_nc, t_rad, t_four, st_ix, max_ix, mask_circle, THRESHOLD)
+    print(back.calc_std(st_ix, max_ix))
     back.calc_radon(0)
 
     # for i in range(10):

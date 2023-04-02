@@ -13,7 +13,7 @@ def dispersion_func(k, vcos):
 
 
 @njit
-def speed_bilinear_interpol(back, mask_div, mask_mod):
+def bilinear_interpol(back, mask_div, mask_mod):
     """
     bilinear interpolation to cartesian directly from polar data
     :param back: input backscatter in polar
@@ -116,8 +116,6 @@ def find_main_directions(radon_array: np.ndarray, num_peaks: int, window: int):
             if np.abs(ans[i] - ans[i - 1]) % 360 < 2 * window:
                 ans.pop()
 
-    print(ans)
-
     for i in range(len(ans)):
         dirs.append(calc_autocorr(radon_array[:, :, ans[i]]))
         ans[i] *= -1
@@ -158,126 +156,6 @@ def calc_autocorr(array: np.ndarray):
     res = np.max(r_arr - l_arr)
 
     return res / (array.shape[0])
-
-
-def radon_process(array: np.ndarray, threshold: float, mask_circle: np.ndarray):
-    """
-    preprocess filtering (only threshold) and transforming by Radon
-    @param array: input data
-    @param threshold: if element more than 2 * threshold * mean, it becomes 1, else it 0
-    @param mask_circle: a special mask that cuts a circle from a square for Radon transformation
-    @return transformed data
-    """
-    radon_array = np.zeros(shape=(array.shape[0], array.shape[1], 180), dtype=np.double)
-    for t in range(array.shape[0]):
-        # filtering
-        # array[t][array[t] < 2 * threshold * np.mean(array[t])] = 0
-        # array[t][array[t] != 0] = 1
-        # radon transform
-        radon_array[t] = radon(mask_circle * array[t])
-    return radon_array
-
-
-def calc_std(data_bsktr, start_ind: int, max_time: int):
-    """
-    calculating dispersion of some serial shots to find more clean zone of data
-    @param data_bsktr: input netcdf data
-    @param start_ind: zero buoy time shot
-    @param max_time: full number of recorded shots
-    @return azimuth and distance of clear zone
-    """
-
-    bck_cntr = np.ndarray(shape=(4, 4096, 100), dtype=np.double)
-    rho_bck_0 = 700
-    for t in range(bck_cntr.shape[0]):
-
-        if t < max_time - 1:
-            bck_cntr[t] = data_bsktr[t + start_ind][:, rho_bck_0:rho_bck_0 + bck_cntr.shape[2]]
-        else:
-            bck_cntr[t] = data_bsktr[- t - start_ind + 2 * max_time - 1][:, rho_bck_0:rho_bck_0 + bck_cntr.shape[2]]
-
-    std_array = np.std(bck_cntr, axis=0)
-    # plt.imshow(std_array, cmap='Greys', origin='lower')
-    # plt.show()
-
-    std_array_smooth = np.zeros((int(bck_cntr.shape[1] / 64 - 1), int(bck_cntr.shape[2] / 10 - 1)))
-    for i in range(std_array_smooth.shape[0] - 1):
-        for j in range(std_array_smooth.shape[1] - 1):
-            std_array_smooth[i, j] = np.mean(std_array[i * 64: i * 64 + 64, j * 10: j * 10 + 10])
-
-    argmax = np.argmax(std_array_smooth)
-    theta = (argmax // std_array_smooth.shape[1]) / std_array_smooth.shape[0] * 360
-    rho = (argmax % std_array_smooth.shape[1] + rho_bck_0) * 1.875
-
-    return rho, theta
-
-
-def calc_back(data: netCDF4.Dataset, calc_time: int, start_ind: int, max_time: int, resolution: int, area_size: int,
-              sz_arr: int, flag_area: int, an: float):
-    """
-    calculating a cartesian data inside current area
-    @param data: input netcdf data
-    @param calc_time: number of calculating turns
-    @param start_ind: zero buoy time shot
-    @param max_time: number of recorded turns
-    @param resolution: resolution in converting from polar to cartesian
-    @param area_size: size of research square in meters
-    @param sz_arr: size of research square in pixels
-    @param flag_area: 0 for Radon, 1 for reRadon, 2 for Fourier
-    @param an: obtained by radon angle
-    @return cartesian data inside area
-    """
-    if flag_area != 2:
-        back = np.zeros(shape=(calc_time, sz_arr, sz_arr), dtype=np.double)
-    else:
-        back = np.zeros(shape=(calc_time, sz_arr, sz_arr), dtype=np.complex_)
-
-    ang_std = []
-
-    for t in range(calc_time):
-
-        rad_std = 0.
-        dir_std = 0.
-
-        if t % 60 == 0:
-            rad_std, dir_std = calc_std(data.variables["bsktr_radar"], start_ind, max_time)
-            ang_std.append(dir_std)
-
-            if np.abs(dir_std - 6) < 6:  # 6 degrees is gluing place, we need avoid it
-                dir_std += np.sign(dir_std - 6) * 2 * np.abs(dir_std - 6)
-
-        if flag_area == 0:
-            zone = Area(area_size, area_size, rad_std, dir_std, 0)
-        elif flag_area == 1:
-            zone = Area(area_size, area_size, 1360, 270, 0)
-        elif flag_area == 2:
-            zone = Area(area_size, area_size, rad_std, dir_std, (-dir_std - an) % 360)
-        else:
-            zone = Area(area_size, area_size, rad_std, dir_std, 0)
-            # zone = Area(area_size, area_size, rad_std, angle_std, (-angle_std - an) % 360)
-
-        area_mask_div, area_mask_mod, min_max = make_area_mask(zone, data.variables["rad_radar"][-1],
-                                                               data.variables["rad_radar"].shape[0],
-                                                               data.variables["theta_radar"].shape[0], resolution)
-        if t < max_time:
-            back_polar = np.transpose(data.variables["bsktr_radar"][t + start_ind])
-        else:
-            back_polar = np.transpose(data.variables["bsktr_radar"][- t - start_ind + 2 * max_time - 1])
-
-        if flag_area != 2:
-            back[t] = speed_bilinear_interpol(back_polar, area_mask_div, area_mask_mod)
-        else:
-            back[t] = sf.fft2(speed_bilinear_interpol(back_polar, area_mask_div, area_mask_mod))[:sz_arr, :sz_arr]
-
-    print("dir_std", ang_std)
-
-    res_an = int(np.median(np.array(ang_std)))
-    if res_an > 360:
-        res_an -= 360
-    if res_an < 0:
-        res_an += 360
-
-    return back, res_an
 
 
 def cut_one_harm_3d(data: np.ndarray, df: int, turn_period: float, k_min: float, k_max: float, speed: float,
@@ -407,7 +285,7 @@ def calc_dispersion(name, array: np.ndarray, speed: float, df: int, turn_period:
     plt.rc('axes', axisbelow=True)
 
     axs.imshow(arr_2d, origin='lower', cmap='gnuplot', interpolation='None', aspect=0.6,
-              extent=[0, k_max, 0, 1 / turn_period])
+               extent=[0, k_max, 0, 1 / turn_period])
     axs.set_xlabel(r"Wave number $k$, rad/m")
     axs.set_ylabel(r"Frequency $f$, 1/s")
 
@@ -503,7 +381,7 @@ def calc_dispersion(name, array: np.ndarray, speed: float, df: int, turn_period:
 
     signal = arr_2d - noise
     plt.imshow(signal, origin='lower', cmap='gnuplot', interpolation='None', aspect=0.6,
-              extent=[0, k_max, 0, 1 / turn_period])
+               extent=[0, k_max, 0, 1 / turn_period])
     plt.show()
     plt.imshow(arr_2d, origin='lower', cmap='gnuplot', interpolation='None', aspect=0.6,
                extent=[0, k_max, 0, 1 / turn_period])
@@ -526,12 +404,7 @@ def calc_dispersion(name, array: np.ndarray, speed: float, df: int, turn_period:
     return m0, m1, freq_specter, np.arccos(max(min(popt[0] / speed, 1), -1)) / np.pi * 180
 
 
-"""
 def calc_forward_toward(array: np.ndarray, window: int):
-
-    determine direction of wave in current packet
-    :param array: input 2d array of data after Radon transform cut in current direction
-    :param window: if AN is found peak, then in [AN - window, AN + window] new peaks won't find
 
     toward = np.zeros(array.shape[0], dtype=int)
     copy = np.copy(array[0])
@@ -566,7 +439,6 @@ def calc_forward_toward(array: np.ndarray, window: int):
         return False, False
 
     return True, np.sum(toward) >= 0
-"""
 
 
 def process_fourier(name, array: np.ndarray, speed: float, angle: float, df: int, turn_period: float, k_min: float,
