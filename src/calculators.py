@@ -509,5 +509,6 @@ def process_fourier(name, array: np.ndarray, speed: float, angle: float, df: int
         trapezoid(trapezoid(data_bgn[int_ind_k:])[int_ind_k:])[int_ind_f:])
 
     m1 = 0
+    # hello
 
     return m0, m1, freq
