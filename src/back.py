@@ -1,6 +1,8 @@
+import time
+
 import numpy as np
 from scipy.signal import welch
-from src.calculators import bilinear_interpol, find_main_directions, calc_autocorr, calc_dispersion
+from src.calculators import bilinear_interpol, find_main_directions, calc_forward_toward, calc_dispersion
 from src.area import *
 import scipy.fft as sf
 from skimage.transform import radon
@@ -15,7 +17,7 @@ class Back:
     """
 
     def __init__(self, data, radon_time: int, fourier_time: int, start_index: int,
-                 max_index: int, circle_radon: np.ndarray, threshold=0.5, resolution=4096, size_square=720,
+                 max_index: int, circle_radon: np.ndarray, threshold=0.4, resolution=4096, size_square=720,
                  size_square_px=384):
         """
         конструктор
@@ -27,7 +29,6 @@ class Back:
         self.resolution = resolution
         self.size_square = size_square
         self.size_square_px = size_square_px
-        self.ang_std = 0.
         self.speed = float(np.median(data.variables["sog_radar"][start_index: start_index + fourier_time]))
         self.start_index = start_index
         self.threshold = threshold
@@ -58,6 +59,9 @@ class Back:
 
         std_array = np.std(bck_cntr, axis=0)
 
+        max_std = np.max(std_array)
+        mean_std =np.mean(std_array)
+
         std_array_smooth = np.zeros(shape=(int(std_array.shape[0] // 64), int(std_array.shape[1] // 128)))
 
         for i in range(std_array_smooth.shape[0]):
@@ -71,9 +75,9 @@ class Back:
         if np.abs(theta - 6) < 6:  # 6 degrees is gluing place, we need avoid it
             theta += np.sign(theta - 6) * 2 * np.abs(theta - 6)
 
-        self.dir_std = theta
+        self.dir_std = round(theta)
 
-        return theta, rho
+        return theta, rho, max_std, mean_std
 
     def calc_back(self, radon_or_fourier: bool, an: float = 0.):
         """
@@ -89,7 +93,7 @@ class Back:
 
         for t in range(back.shape[0]):
 
-            dir_std, rad_std = self.calc_std()
+            dir_std, rad_std, _, __ = self.calc_std()
 
             if radon_or_fourier:
                 zone = Area(self.size_square, self.size_square, rad_std, dir_std, 0)
@@ -107,7 +111,10 @@ class Back:
                     self.data.variables["bsktr_radar"][- t - self.start_index + 2 * self.max_index - 1])
 
             if radon_or_fourier:
+                t0 = time.time()
                 back[t] = bilinear_interpol(back_polar, area_mask_div, area_mask_mod)
+                print(time.time() - t0)
+
             else:
                 back[t] = sf.fft2(bilinear_interpol(back_polar, area_mask_div, area_mask_mod))[:CUT_IND, :CUT_IND]
 
@@ -120,13 +127,13 @@ class Back:
         # try cut data from azimuth with maximum dispersion
         back_cart_3d_rad = self.calc_back(True)
         print("back for radon done")
-        print("ang_std >> ", self.ang_std)
+        print("dir_std >> ", self.dir_std)
 
         self.radon_array = np.zeros(shape=(self.radon_time, self.size_square_px, 180), dtype=np.double)
         for t in range(self.radon_time):
             # filtering
-            # array[t][array[t] < 2 * threshold * np.mean(array[t])] = 0
-            # array[t][array[t] != 0] = 1
+            back_cart_3d_rad[t][back_cart_3d_rad[t] < 2 * self.threshold * np.mean(back_cart_3d_rad[t])] = 0
+            back_cart_3d_rad[t][back_cart_3d_rad[t] != 0] = 1
             # radon transform
             self.radon_array[t] = radon(self.circle_radon * back_cart_3d_rad[t])
 
@@ -135,47 +142,33 @@ class Back:
     def directions_search(self, peak_numbers: int, peak_window: int) -> list:
 
         angles, direct = find_main_directions(self.radon_array, peak_numbers, peak_window)
-        print("obtained direction >> ", angles)
+        print("obtained angles >> ", angles)
         print("obtained directs >> ", direct)
 
-        if np.abs(direct[0]) < 0.1:  # if data so noisy that we can't determine directions
-            # try to cut data from 270 azimuth
-            self.calc_radon(1)
-            angles2, direct2 = find_main_directions(self.radon_array, peak_numbers, peak_window)
-            print("bad angles, new directions >> ", angles2, direct2)
-            if np.abs(direct2[0]) > np.abs(direct[0]):
-                angles = angles2
-                direct = direct2
-
-        direct_std = calc_autocorr(self.radon_array[:, :, self.ang_std % 180])
+        direct_std = calc_forward_toward(self.radon_array[:, :, self.dir_std % 180], 25)
         print("direct std", direct_std)
         if direct_std < 0:
-            if self.ang_std > 180:
-                self.ang_std -= 180
+            if self.dir_std > 180:
+                self.dir_std -= 180
             else:
-                self.ang_std += 180
+                self.dir_std += 180
 
-        # if the direction obtained by Radon is very different from the largest standard deviation,
+        # if the direction obtained by Radon is so different from the largest standard deviation,
         # we give priority to the standard deviation
-        if np.abs(direct_std) > np.abs(direct[0]) and np.abs(self.ang_std - angles[0]) > 60:
-            angles[0] = self.ang_std
+        if np.abs(direct_std) > np.abs(direct[0]) and np.abs(self.dir_std - angles[0]) > 60:
+            angles[0] = self.dir_std
 
         print("final", angles[0])
         return angles
 
-    def calc_fourier(self, angles: list, cut_ind: int, disp_width: int, turn_period: float, name):
+    def calc_fourier(self, angle, cut_ind: int, disp_width: int, turn_period: float, name):
 
-        for an in angles:  # loop in every obtained direction (so we can separate different wave systems)
+        print("back for fourier start")
+        back_cartesian_four = self.calc_back(False, angle)
+        print("back for fourier done")
+        f, res_s = welch(back_cartesian_four, detrend='linear', axis=0, return_onesided=False)
+        print("welch done")
 
-            # but now we compare only main parameters (because buoy)
+        k_max = 2 * np.pi / self.size_square * cut_ind
 
-            if an == angles[0]:
-                back_cartesian_four, ang_std = calc_back(self.data, self.fourier_time, self.start_index, self.max_index,
-                                                         self.resolution, self.size_square, cut_ind, 2, an)
-                print("back for fourier done")
-                f, res_s = welch(back_cartesian_four, detrend='linear', axis=0, return_onesided=False)
-                print("welch done")
-
-                k_max = 2 * np.pi / self.size_square * cut_ind
-
-                return calc_dispersion(name, res_s, self.speed, disp_width, turn_period, k_max)
+        return calc_dispersion(name, res_s, self.speed, disp_width, turn_period, k_max)

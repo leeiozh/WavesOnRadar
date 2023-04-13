@@ -4,19 +4,16 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 
-def func(x, A, B) \
-        :
+def func(x, A, B):
     return A + B * np.sqrt(x)
 
 
 def rmse(array1, array2):
-    print(77, np.sqrt(array1.shape[0]))
-    print(88, np.linalg.norm(array1 - array2))
-    print(array1 - array2)
+    print(array2)
     return np.linalg.norm(array1 - array2) / np.sqrt(array1.shape[0])
 
 
-number = '21'
+number = '22'
 
 PATH = '/storage/kubrick/ezhova/WavesOnRadar/'
 
@@ -34,6 +31,8 @@ popt1, pcov1 = curve_fit(func, df["radar_m0"][msk1], df["buoy_swh"][msk1])
 popt2, pcov2 = curve_fit(func, df2["radar_m0"][msk2], df2["sat_swh"][msk2])
 popt, pcov = curve_fit(func, con_m0, con_swh)
 print(popt1, popt2)
+
+# ************************************** buoy and satellite SWH vs radar SWH **************************************
 
 fig, axs = plt.subplots(1, 1, figsize=(4, 4), facecolor='w', edgecolor='k')
 fig.subplots_adjust(hspace=.3, wspace=.3)
@@ -56,6 +55,8 @@ axs.set_ylabel("SWH by RADAR, m")
 plt.savefig(PATH + 'plots/swh_all_' + number + '.png', bbox_inches='tight', dpi=1000)
 plt.show()
 
+# ************************************** only buoy SWH vs radar SWH **************************************
+
 fig, axs = plt.subplots(1, 1, figsize=(4, 4), facecolor='w', edgecolor='k')
 fig.subplots_adjust(hspace=.3, wspace=.3)
 axs.get_xaxis().set_tick_params(which='both', direction='in')
@@ -75,6 +76,8 @@ axs.set_xlabel("SWH by BUOY, m")
 axs.set_ylabel("SWH by RADAR, m")
 plt.savefig(PATH + 'plots/swh_stat_' + number + '.png', bbox_inches='tight', dpi=1000)
 plt.show()
+
+# ************************************** only satellite SWH vs radar SWH **************************************
 
 fig, axs = plt.subplots(1, 1, figsize=(4, 4), facecolor='w', edgecolor='k')
 fig.subplots_adjust(hspace=.3, wspace=.3)
@@ -96,6 +99,8 @@ axs.set_ylabel("SWH by RADAR, m")
 plt.savefig(PATH + 'plots/swh_notstat_' + number + '.png', bbox_inches='tight', dpi=1000)
 plt.show()
 
+# ************************************** buoy period vs radar period **************************************
+
 fig, axs = plt.subplots(1, 1, figsize=(4, 4), facecolor='w', edgecolor='k')
 fig.subplots_adjust(hspace=.3, wspace=.3)
 axs.get_xaxis().set_tick_params(which='both', direction='in')
@@ -115,6 +120,8 @@ axs.text(12, 4, 'rmse =' + str(round(rmse(df["buoy_per"].to_numpy()[msk1], df["r
 
 plt.savefig(PATH + 'plots/per' + number + '.png', bbox_inches='tight', dpi=1000)
 plt.show()
+
+# ************************************** buoy angle vs radar angle **************************************
 
 fig, axs = plt.subplots(1, 1, figsize=(4, 4), facecolor='w', edgecolor='k')
 fig.subplots_adjust(hspace=.3, wspace=.3)
@@ -154,6 +161,8 @@ axs.grid(linestyle=':')
 plt.savefig(PATH + 'plots/dir' + number + '.png', bbox_inches='tight', dpi=1000)
 plt.show()
 
+# ************************************** compare error with vessel speed **************************************
+
 fig, axs = plt.subplots(1, 1, figsize=(8, 4), facecolor='w', edgecolor='k')
 fig.subplots_adjust(hspace=.3, wspace=.3)
 axs.get_xaxis().set_tick_params(which='both', direction='in')
@@ -166,12 +175,14 @@ axs.scatter(df2["speed"][msk2],
             np.abs(df2["sat_swh"][msk2] - func(df2["radar_m0"][msk2], *popt)) / df2["sat_swh"][msk2], label='satellite',
             edgecolor='black', s=40)
 plt.legend()
-axs.set_ylim(-0.25, 1.5)
+axs.set_ylim(-0.25, 1.)
 axs.grid(linestyle=':')
 axs.set_xlabel("Speed over ground, m/s")
 axs.set_ylabel(r"$\frac{|SWH by SAT/BUOY - SWH by RADAR|}{SWH by SAT/BUOY}$")
 plt.savefig(PATH + 'plots/speed2' + number + '.png', bbox_inches='tight', dpi=1000)
 plt.show()
+
+# ************************************** compare error with wind speed **************************************
 
 fig, axs = plt.subplots(1, 1, figsize=(8, 4), facecolor='w', edgecolor='k')
 fig.subplots_adjust(hspace=.3, wspace=.3)
@@ -179,13 +190,14 @@ axs.get_xaxis().set_tick_params(which='both', direction='in')
 axs.get_yaxis().set_tick_params(which='both', direction='in')
 plt.rc('axes', axisbelow=True)
 axs.grid(linestyle=':')
-axs.scatter(df["wind_speed"][msk1], np.abs(df["buoy_swh"][msk1] - func(df["radar_m0"][msk1], *popt1)) / df["buoy_swh"][msk1],
+axs.scatter(df["wind_speed"][msk1],
+            np.abs(df["buoy_swh"][msk1] - func(df["radar_m0"][msk1], *popt1)) / df["buoy_swh"][msk1],
             label='buoy', edgecolor='black', s=40)
 axs.scatter(df2["wind_speed"][msk2],
             np.abs(df2["sat_swh"][msk2] - func(df2["radar_m0"][msk2], *popt)) / df2["sat_swh"][msk2], label='satellite',
             edgecolor='black', s=40)
 plt.legend()
-#axs.set_ylim(-0.25, 1.5)
+axs.set_ylim(-0.25, 1.)
 axs.grid(linestyle=':')
 axs.set_xlabel("Wind speed, m/s")
 axs.set_ylabel(r"$\frac{|SWH by SAT/BUOY - SWH by RADAR|}{SWH by SAT/BUOY}$")

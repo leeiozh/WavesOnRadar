@@ -11,12 +11,12 @@ from numba import float64
 PATH = '/storage/kubrick/ezhova/WavesOnRadar/'
 
 t_rad = 32  # количество оборотов, учитываемое преобразованием Радона для определения направления
-t_four = 512  # количество оборотов, учитываемое преобразованием Фурье
+t_four = 256  # количество оборотов, учитываемое преобразованием Фурье
 PERIOD_RADAR = 2.5  # период оборота радара
-WIDTH_DISPERSION = 15  # (полуширина + 1) в пикселах вырезаемой области Омега из дисперсионного соотношения
+WIDTH_DISPERSION = 10  # (полуширина + 1) в пикселах вырезаемой области Омега из дисперсионного соотношения
 cut_ind = 32  # отсечка массива после преобразования Фурье
 resolution = 4096  # разрешение картинки по обеим осям (4096 -- максимальное, его лучше не менять)
-THRESHOLD = 0.5  # пороговое значение для фильтра к преобразованию Радона
+THRESHOLD = 0.4  # пороговое значение для фильтра к преобразованию Радона
 SQUARE_SIZE = 720  # размер вырезаемого квадрата в метрах
 SIZE_SQUARE_PIX = int(SQUARE_SIZE / 1.875)  # размер вырезаемого квадрата в пикселах
 k_min = 2 * np.pi / SQUARE_SIZE  # минимальное волновое число
@@ -79,7 +79,6 @@ mask_circle = make_circle(SIZE_SQUARE_PIX)  # mask of circle for Radon transform
 
 for name in stations:
     data_nc = nc.Dataset(name)  # file data name
-    output_file = pd.read_csv(PATH + "sheets/stations_data13.csv", delimiter=",")  # file for output data
 
     print("station " + name[-7:-3] + " started proccess...")
 
@@ -92,15 +91,18 @@ for name in stations:
         break
 
     back = Back(data_nc, t_rad, t_four, st_ix, max_ix, mask_circle, THRESHOLD)
-    print(back.calc_std(st_ix, max_ix))
-    back.calc_radon(0)
+
+    th, rho, max, men = back.calc_std(st_ix, max_ix)
+
+    back.calc_radon()
 
     # for i in range(10):
     #    make_shot(radon_array[i], "radon_" + name[-7:-3] + str(i), True)
 
     angles = back.directions_search(1, 15)
+    print("angles", angles)
 
-    m0, m1, radar_szz, angle_aa = back.calc_fourier(angles, 32, WIDTH_DISPERSION, PERIOD_RADAR, name)
+    m0, m1, radar_szz, angle_aa, length = back.calc_fourier(angles[0], 32, WIDTH_DISPERSION, PERIOD_RADAR, name)
 
     # read parameters obtained by buoy for comparing
     buoy_freq = data_nc.variables["freq_manual"]
@@ -118,24 +120,29 @@ for name in stations:
     # plt.savefig("pics/freq_" + str(name[-7:-3]) + ".png")
     # plt.show()
 
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["radar_an"]] = angles[0]
+    output_file = pd.read_csv(PATH + "sheets/stations_data13.csv", delimiter=",")  # file for output data
 
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["radar_m0"]] = m0
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["radar_per"]] = PERIOD_RADAR / (
-            np.argmax(radar_szz) / radar_szz.shape[0])
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["buoy_swh"]] = buoy_swh[0]
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["buoy_per"]] = buoy_per[0]
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["buoy_ang"]] = buoy_ang[0]
-
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["radar_an2"]] = angles[-1]
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["radar_an3"]] = angle_aa
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["wdir"]] = np.median(
-        data_nc.variables["wdir"][st_ix: st_ix + t_four])
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["speed"]] = np.median(
-        data_nc.variables["sog_radar"][st_ix: st_ix + t_four])
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["hdg"]] = np.median(
-        data_nc.variables["giro_radar"][st_ix: st_ix + t_four])
-    output_file.loc[output_file["name"] == int(name[-7:-3]), ["dir_std"]] = back.ang_std
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["radar_an"]] = angles[0]
+#
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["radar_m0"]] = m0
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["radar_per"]] = PERIOD_RADAR / (
+    #        np.argmax(radar_szz) / radar_szz.shape[0])
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["buoy_swh"]] = buoy_swh[0]
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["buoy_per"]] = buoy_per[0]
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["buoy_ang"]] = buoy_ang[0]
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["lenght"]] = length
+#
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["radar_an2"]] = angles[-1]
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["radar_an3"]] = angle_aa
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["wdir"]] = np.median(
+    #    data_nc.variables["wdir"][st_ix: st_ix + t_four])
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["speed"]] = np.median(
+    #    data_nc.variables["sog_radar"][st_ix: st_ix + t_four])
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["hdg"]] = np.median(
+    #    data_nc.variables["giro_radar"][st_ix: st_ix + t_four])
+    #output_file.loc[output_file["name"] == int(name[-7:-3]), ["dir_std"]] = back.dir_std
+    output_file.loc[output_file["name"] == int(name[-7:-3]), ["max_std"]] = max
+    output_file.loc[output_file["name"] == int(name[-7:-3]), ["mean_std"]] = men
 
     output_file.to_csv(PATH + "sheets/stations_data13.csv", index=False)
 

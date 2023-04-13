@@ -11,10 +11,10 @@ PATH = '/storage/kubrick/ezhova/WavesOnRadar/'
 t_rad = 32  # количество оборотов, учитываемое преобразованием Радона для определения направления
 t_four = 256  # количество оборотов, учитываемое преобразованием Фурье
 PERIOD_RADAR = 2.5  # период оборота радара
-WIDTH_DISPERSION = 15  # ширина в пикселах вырезаемой области Омега из дисперсионного соотношения
+WIDTH_DISPERSION = 10  # ширина в пикселах вырезаемой области Омега из дисперсионного соотношения
 cut_ind = 32  # отсечка массива после преобразования Фурье
 resolution = 4096  # разрешение картинки по обеим осям (4096 -- максимальное, его лучше не менять)
-THRESHOLD = 0.5  # пороговое значение для фильтра к преобразованию Радона
+THRESHOLD = 0.4  # пороговое значение для фильтра к преобразованию Радона
 SQUARE_SIZE = 720  # размер вырезаемого квадрата в метрах
 SIZE_SQUARE_PIX = int(SQUARE_SIZE / 1.875)  # размер вырезаемого квадрата в пикселах
 k_min = 2 * np.pi / SQUARE_SIZE  # минимальное волновое число
@@ -42,9 +42,9 @@ else:
 
 stations.sort()
 
-for st in stations:
-    tmp = nc.Dataset(st)
-    print(st[-20:-6], tmp.variables["bsktr_radar"].shape[0])
+# for st in stations:
+#     tmp = nc.Dataset(st)
+#     print(st[-20:-6], tmp.variables["bsktr_radar"].shape[0])
 
 an_res = []  # list of obtained directions
 
@@ -67,35 +67,41 @@ for name in stations:
     if max_ix > t_four / 2:  # we can apply mirror not less than half data
 
         back = Back(data_nc, t_rad, t_four, st_ix, max_ix, mask_circle, THRESHOLD)
-        back.calc_radon(0)
+        th, rho, max, men = back.calc_std(st_ix, max_ix)
+        # back.calc_radon()
+#
+        # angles = back.directions_search(1, 15)
+        # print("angles", angles)
+#
+        # m0, m1, radar_szz, angle_aa, length = back.calc_fourier(angles, 32, WIDTH_DISPERSION, PERIOD_RADAR, name[-7:-3])
+#
+        # # plt.close()
+        # # plt.plot(np.linspace(0, 1 / PERIOD_RADAR, radar_szz.shape[0]), radar_szz, label="radar")
+        # # plt.legend()
+        # # plt.grid()
+        # # plt.savefig(PATH + "pics/freq_" + str(name[-17:-6]) + ".png")
+        # # plt.show()
+#
+        # output_file.loc[output_file["name"] == name[-20:-6], ["radar_an"]] = angles[0]
+#
+        # output_file.loc[output_file["name"] == name[-20:-6], ["radar_m0"]] = m0
+        # output_file.loc[output_file["name"] == name[-20:-6], ["radar_per"]] = PERIOD_RADAR / (
+        #         np.argmax(radar_szz) / radar_szz.shape[0])
+        # output_file.loc[output_file["name"] == name[-20:-6], ["radar_len"]] = length
+        # output_file.loc[output_file["name"] == name[-20:-6], ["radar_an2"]] = angles[-1]
+        # output_file.loc[output_file["name"] == name[-20:-6], ["radar_an3"]] = angle_aa
+        # output_file.loc[output_file["name"] == name[-20:-6], ["lat_radar"]] = np.mean(
+        #     data_nc.variables["lat_radar"][st_ix: st_ix + t_four])
+        # output_file.loc[output_file["name"] == name[-20:-6], ["lon_radar"]] = np.mean(
+        #     data_nc.variables["lon_radar"][st_ix: st_ix + t_four])
+        # output_file.loc[output_file["name"] == name[-20:-6], ["speed"]] = np.median(
+        #     data_nc.variables["sog_radar"][st_ix: st_ix + t_four])
+        # output_file.loc[output_file["name"] == name[-20:-6], ["hdg"]] = np.median(
+        #     data_nc.variables["giro_radar"][st_ix: st_ix + t_four])
+        # output_file.loc[output_file["name"] == name[-20:-6], ["dir_std"]] = back.dir_std
 
-        angles = back.directions_search(1, 15)
-
-        m0, m1, radar_szz, angle_aa = back.calc_fourier(angles, 32, WIDTH_DISPERSION, PERIOD_RADAR, name[-7:-3])
-
-        # plt.close()
-        # plt.plot(np.linspace(0, 1 / PERIOD_RADAR, radar_szz.shape[0]), radar_szz, label="radar")
-        # plt.legend()
-        # plt.grid()
-        # plt.savefig(PATH + "pics/freq_" + str(name[-17:-6]) + ".png")
-        # plt.show()
-
-        output_file.loc[output_file["name"] == name[-20:-6], ["radar_an"]] = angles[0]
-
-        output_file.loc[output_file["name"] == name[-20:-6], ["radar_m0"]] = m0
-        output_file.loc[output_file["name"] == name[-20:-6], ["radar_per"]] = PERIOD_RADAR / (
-                np.argmax(radar_szz) / radar_szz.shape[0])
-        output_file.loc[output_file["name"] == name[-20:-6], ["radar_an2"]] = angles[-1]
-        output_file.loc[output_file["name"] == name[-20:-6], ["radar_an3"]] = angle_aa
-        output_file.loc[output_file["name"] == name[-20:-6], ["lat_radar"]] = np.mean(
-            data_nc.variables["lat_radar"][st_ix: st_ix + t_four])
-        output_file.loc[output_file["name"] == name[-20:-6], ["lon_radar"]] = np.mean(
-            data_nc.variables["lon_radar"][st_ix: st_ix + t_four])
-        output_file.loc[output_file["name"] == name[-20:-6], ["speed"]] = np.median(
-            data_nc.variables["sog_radar"][st_ix: st_ix + t_four])
-        output_file.loc[output_file["name"] == name[-20:-6], ["hdg"]] = np.median(
-            data_nc.variables["giro_radar"][st_ix: st_ix + t_four])
-        output_file.loc[output_file["name"] == name[-20:-6], ["dir_std"]] = back.ang_std
+        output_file.loc[output_file["name"] == name[-20:-6], ["max_std"]] = max
+        output_file.loc[output_file["name"] == name[-20:-6], ["mean_std"]] = men
 
         output_file.to_csv(PATH + "sheets/stations_data12.csv", index=False)
 
