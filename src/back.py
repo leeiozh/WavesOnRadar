@@ -100,7 +100,8 @@ class Back:
             else:
                 zone = Area(self.size_square, self.size_square, rad_std, dir_std, (-dir_std - an) % 360)
 
-            area_mask_div, area_mask_mod, min_max = make_area_mask(zone, self.data.variables["rad_radar"][-1],
+            if t == 0:
+                area_mask_div, area_mask_mod, min_max = make_area_mask(zone, self.data.variables["rad_radar"][-1],
                                                                    self.data.variables["rad_radar"].shape[0],
                                                                    self.data.variables["theta_radar"].shape[0],
                                                                    self.resolution)
@@ -172,3 +173,9 @@ class Back:
         k_max = 2 * np.pi / self.size_square * cut_ind
 
         return calc_dispersion(name, res_s, self.speed, disp_width, turn_period, k_max)
+
+    def calc_length(self, angles):
+        lengths = np.zeros(angles.shape[0])
+
+        return lengths
+
