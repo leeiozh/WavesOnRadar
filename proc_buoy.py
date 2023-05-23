@@ -99,8 +99,9 @@ for name in stations:
     # for i in range(10):
     #    make_shot(radon_array[i], "radon_" + name[-7:-3] + str(i), True)
 
-    angles = back.directions_search(1, 15)
-    print("angles", angles)
+    angles, length = back.directions_search(1, 15)
+    print("wave theta", angles)
+    print("wavelenght", length)
 
     m0, m1, radar_szz, angle_aa, length = back.calc_fourier(angles[0], 32, WIDTH_DISPERSION, PERIOD_RADAR, name)
 
