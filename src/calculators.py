@@ -5,6 +5,9 @@ from src.drawers import *
 from src.area import *
 from scipy.optimize import curve_fit
 
+from sklearn.preprocessing import MinMaxScaler
+from scipy.signal import find_peaks
+
 
 def dispersion_func(k, vcos):
     return (np.sqrt(9.81 * k) - k * vcos) / 2 / np.pi
@@ -117,6 +120,7 @@ def find_main_directions(radon_array: np.ndarray, num_peaks: int, window: int):
 
     for i in range(len(ans)):
         dirs.append(calc_forward_toward(radon_array[:, :, ans[i]], 25))
+        length = calc_length_by_peaks(radon_array[:, :, ans[i]])
         ans[i] *= -1
         ans[i] += 180
         if dirs[-1] > 0:
@@ -132,7 +136,18 @@ def find_main_directions(radon_array: np.ndarray, num_peaks: int, window: int):
     dirs = dirs[inds[::-1]]
     ans = ans[inds[::-1]]
 
-    return ans, dirs
+    return ans, dirs, length
+
+def calc_length_by_peaks(array: np.ndarray):
+    scaler = MinMaxScaler()
+    normilized_array = scaler.fit_transform(array.T).T
+    num_peaks = np.zeros(normilized_array.shape[0])
+    for i in range(32):
+        peaks, _ = find_peaks(normilized_array[i], prominence=0.11)
+        num_peaks[i] = len(peaks)
+    length = round((384 / (sum(num_peaks) / len(num_peaks))) * 1.875)
+    return length
+
 
 
 # def calc_autocorr(array: np.ndarray):
@@ -317,6 +332,7 @@ def calc_dispersion(name, array: np.ndarray, speed: float, df: int, turn_period:
     axs.plot(np.linspace(0, k_max, 32), np.array(l_mark2) / 256 / turn_period, color='white', linewidth=1)
     axs.plot(np.linspace(0, k_max, 32), np.array(r_mark2) / 256 / turn_period, color='white', linewidth=1)
     plt.savefig(PATH + "pics/" + name[-7:-3] + "0.png", bbox_inches='tight', dpi=700)
+    # plt.savefig(PATH + "\\pics\\" + name[-7:-3] + "0.png", bbox_inches='tight', dpi=700)
     plt.show()
 
     signal = arr_2d - noise
