@@ -142,9 +142,10 @@ class Back:
 
     def directions_search(self, peak_numbers: int, peak_window: int) -> list:
 
-        angles, direct = find_main_directions(self.radon_array, peak_numbers, peak_window)
+        angles, direct, length = find_main_directions(self.radon_array, peak_numbers, peak_window)
         print("obtained angles >> ", angles)
         print("obtained directs >> ", direct)
+        print("obtained length >> ", length)
 
         direct_std = calc_forward_toward(self.radon_array[:, :, self.dir_std % 180], 25)
         print("direct std", direct_std)
@@ -160,7 +161,7 @@ class Back:
             angles[0] = self.dir_std
 
         print("final", angles[0])
-        return angles
+        return angles, length
 
     def calc_fourier(self, angle, cut_ind: int, disp_width: int, turn_period: float, name):
 
@@ -173,9 +174,3 @@ class Back:
         k_max = 2 * np.pi / self.size_square * cut_ind
 
         return calc_dispersion(name, res_s, self.speed, disp_width, turn_period, k_max)
-
-    def calc_length(self, angles):
-        lengths = np.zeros(angles.shape[0])
-
-        return lengths
-
